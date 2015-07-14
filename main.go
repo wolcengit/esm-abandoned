@@ -63,6 +63,7 @@ type Config struct {
 	IndexNames        string `short:"i" long:"indexes" description:"list of indexes to copy, comma separated" default:"_all"`
 	CopyAllIndexes    bool   `short:"a" long:"all"     description:"copy indexes starting with . and _" default:"false"`
 	Workers           int    `short:"w" long:"workers" description:"concurrency" default:"1"`
+	BulkSizeInMB      int    `short:"b" long:"bulk_size" description:"bulk size in MB" default:"100"`
 	CopySettings      bool   `long:"settings"          description:"copy sharding settings from source" default:"true"`
 	WaitForGreen      bool   `long:"green"             description:"wait for both hosts cluster status to be green before dump. otherwise yellow is okay" default:"false"`
 }
@@ -158,32 +159,36 @@ func main() {
 		return
 	}
 
-	// create a progressbar and start a docCount
-	bar := pb.StartNew(scroll.Hits.Total)
-	var docCount int
+	if scroll != nil && scroll.Hits.Docs != nil {
+		// create a progressbar and start a docCount
+		bar := pb.StartNew(scroll.Hits.Total)
+		var docCount int
 
-	wg := sync.WaitGroup{}
-	wg.Add(c.Workers)
-	for i := 0; i < c.Workers; i++ {
-		go c.NewWorker(&docCount, bar, &wg)
-	}
-
-	// print errors
-	go func() {
-		for {
-			err := <-c.ErrChan
-			fmt.Println(err)
+		wg := sync.WaitGroup{}
+		wg.Add(c.Workers)
+		for i := 0; i < c.Workers; i++ {
+			go c.NewWorker(&docCount, bar, &wg)
 		}
-	}()
 
-	// loop scrolling until done
-	for scroll.Next(&c) == false {
+		// print errors
+		go func() {
+			for {
+				err := <-c.ErrChan
+				fmt.Println(err)
+			}
+		}()
+
+		// loop scrolling until done
+		for scroll.Next(&c) == false {
+		}
+
+		// finished, close doc chan and wait for goroutines to be done
+		close(c.DocChan)
+		wg.Wait()
+		bar.FinishPrint(fmt.Sprintln("Indexed", docCount, "documents"))
+
 	}
-
-	// finished, close doc chan and wait for goroutines to be done
-	close(c.DocChan)
-	wg.Wait()
-	bar.FinishPrint(fmt.Sprintln("Indexed", docCount, "documents"))
+	
 }
 
 // Stream from source es instance. "done" is an indicator that the stream is
@@ -193,7 +198,7 @@ func (s *Scroll) Next(c *Config) (done bool) {
 	//  curl -XGET 'http://es-0.9:9200/_search/scroll?scroll=5m'
 	id := bytes.NewBufferString(s.ScrollId)
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/_search/scroll?scroll=%s", c.SrcEs, c.ScrollTime), id)
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", c.SrcEs, c.ScrollTime,id), nil)
 	if err != nil {
 		c.ErrChan <- err
 	}
@@ -205,11 +210,23 @@ func (s *Scroll) Next(c *Config) (done bool) {
 
 	// decode elasticsearch scroll response
 	dec := json.NewDecoder(resp.Body)
+
+	// body, _ := ioutil.ReadAll(resp.Body)
+	// bodystr := string(body);
+	// fmt.Println(bodystr)
+
+
 	scroll := &Scroll{}
 	err = dec.Decode(&scroll)
 	if err != nil {
 		c.ErrChan <- err
 		return
+	}
+
+
+	if( scroll.Hits.Docs == nil || len(scroll.Hits.Docs)<=0){
+		fmt.Println("scroll result is empty")
+		return true
 	}
 
 	// XXX this might be bad, but assume we are done
@@ -297,7 +314,7 @@ READ_DOCS:
 		}
 
 		// if we approach the 100mb es limit, flush to es and reset mainBuf
-		if mainBuf.Len()+docBuf.Len() > 100000000 {
+		if mainBuf.Len()+docBuf.Len() > (c.BulkSizeInMB * 1000000) {
 			c.BulkPost(&mainBuf)
 		}
 

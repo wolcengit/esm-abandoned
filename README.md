@@ -1,11 +1,13 @@
-# Elasticsearch Dumper
+# Elasticsearch Migrate Tool
+//forked from: https://github.com/hoffoo/elasticsearch-dump/releases/
+//modified by Medcl
 
 ## EXAMPLE:
-```elasticsearch-dumper -s http://source:9200 -d http://destination:9200 -i index1,index2```
+```./bin/esdumper  -s http://192.168.1.x:9200   -d http://192.168.1.y:9200 -i xxx_index_name --docs-only  --time=2m -w=5 -b=10```
 
-## INSTALL:
-1. ```go get github.com/hoffoo/elasticsearch-dump```
-2. or download a prebuilt binary here: https://github.com/hoffoo/elasticsearch-dump/releases/
+## Compile:
+1. make build
+2. make cross-build 
 
 
 ```
@@ -24,6 +26,8 @@ Application Options:
   -w, --workers=    concurrency (1)
       --settings    copy sharding settings from source (true)
       --green       wait for both hosts cluster status to be green before dump. otherwise yellow is okay (false)
+  -b  bulk_size 	bulk size in MB" default:100
+
 ```
 
 
@@ -39,7 +43,3 @@ Application Options:
 1. ```--workers``` concurrency when we post to the bulk api. Only one post happens at a time, but higher concurrency should give you more throughput when using larger scroll sizes.
 1. Ports are required, otherwise 80 is the assumed port (what)
 
-## BUGS:
-
-1. It will not do anything special when copying the _id (copies _id from source host). If _id is remapped it may not do what you want.
-1. Should assume a default port of 9200
