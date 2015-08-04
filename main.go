@@ -61,6 +61,7 @@ type Config struct {
 	CreateIndexesOnly bool   `long:"index-only"        description:"only create indexes, do not load documents" default:"false"`
 	EnableReplication bool   `long:"replicate"         description:"enable replication while indexing into the new indexes" default:"false"`
 	IndexNames        string `short:"i" long:"indexes" description:"list of indexes to copy, comma separated" default:"_all"`
+	DestIndexName     string `short:"y" long:"dest_indexe" description:"dest index name to save" default:""`
 	CopyAllIndexes    bool   `short:"a" long:"all"     description:"copy indexes starting with . and _" default:"false"`
 	Workers           int    `short:"w" long:"workers" description:"concurrency" default:"1"`
 	BulkSizeInMB      int    `short:"b" long:"bulk_size" description:"bulk size in MB" default:"100"`
@@ -284,8 +285,15 @@ READ_DOCS:
 			}
 		}
 
+		var tempDestIndexName string
+		tempDestIndexName=docI["_index"].(string)
+
+		if(c.DestIndexName != ""){
+			tempDestIndexName=c.DestIndexName
+		}
+
 		doc := Document{
-			Index:  docI["_index"].(string),
+			Index:  tempDestIndexName,
 			Type:   docI["_type"].(string),
 			source: docI["_source"].(map[string]interface{}),
 			Id:     docI["_id"].(string),
