@@ -55,18 +55,18 @@ type Config struct {
 	DstEs             string `short:"d" long:"dest"    description:"destination elasticsearch instance" required:"true"`
 	DocBufferCount    int    `short:"c" long:"count"   description:"number of documents at a time: ie \"size\" in the scroll request" default:"100"`
 	ScrollTime        string `short:"t" long:"time"    description:"scroll time" default:"1m"`
-	Destructive       bool   `short:"f" long:"force"   description:"delete destination index before copying" default:"false"`
+	Destructive       bool   `short:"f" long:"force"   description:"delete destination index before copying"`
 	ShardsCount       int    `long:"shards"            description:"set a number of shards on newly created indexes"`
-	DocsOnly          bool   `long:"docs-only"         description:"load documents only, do not try to recreate indexes" default:"false"`
-	CreateIndexesOnly bool   `long:"index-only"        description:"only create indexes, do not load documents" default:"false"`
-	EnableReplication bool   `long:"replicate"         description:"enable replication while indexing into the new indexes" default:"false"`
+	DocsOnly          bool   `long:"docs-only"         description:"load documents only, do not try to recreate indexes"`
+	CreateIndexesOnly bool   `long:"index-only"        description:"only create indexes, do not load documents"`
+	EnableReplication bool   `long:"replicate"         description:"enable replication while indexing into the new indexes"`
 	IndexNames        string `short:"i" long:"indexes" description:"list of indexes to copy, comma separated" default:"_all"`
 	DestIndexName     string `short:"y" long:"dest_indexe" description:"dest index name to save" default:""`
-	CopyAllIndexes    bool   `short:"a" long:"all"     description:"copy indexes starting with . and _" default:"false"`
+	CopyAllIndexes    bool   `short:"a" long:"all"     description:"copy indexes starting with . and _"`
 	Workers           int    `short:"w" long:"workers" description:"concurrency" default:"1"`
 	BulkSizeInMB      int    `short:"b" long:"bulk_size" description:"bulk size in MB" default:"100"`
-	CopySettings      bool   `long:"settings"          description:"copy sharding settings from source" default:"true"`
-	WaitForGreen      bool   `long:"green"             description:"wait for both hosts cluster status to be green before dump. otherwise yellow is okay" default:"false"`
+	NoCopySettings    bool   `long:"settings"          description:"copy sharding settings from source"`
+	WaitForGreen      bool   `long:"green"             description:"wait for both hosts cluster status to be green before dump. otherwise yellow is okay"`
 }
 
 func main() {
@@ -100,7 +100,7 @@ func main() {
 		for name, _ := range idxs {
 			idxs.SetShardCount(name, fmt.Sprint(c.ShardsCount))
 		}
-	} else if c.CopySettings == true {
+	} else if c.NoCopySettings == false {
 		if err := c.CopyShardingSettings(&idxs); err != nil {
 			fmt.Println(err)
 			return
