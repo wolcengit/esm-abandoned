@@ -10,10 +10,10 @@ copy index `index_name` from `192.168.1.x` to `192.168.1.y:9200`
 ./bin/esdumper  -s http://192.168.1.x:9200   -d http://192.168.1.y:9200 -i index_name --docs-only  --time=2m -w=5 -b=10
 ```
 
-copy index `src_index` from `192.168.1.x` to `192.168.1.y:9200` and save with `desc_index`
+copy index `src_index` from `192.168.1.x` to `192.168.1.y:9200` and save with `dest_index`
 
 ```
-./bin/esdumper -s http://localhost:9200 -d http://localhost:9200 -i src_index -y desc_index --docs-only --time=2m -w=5 -b=10
+./bin/esdumper -s http://localhost:9200 -d http://localhost:9200 -i src_index -y dest_index --docs-only --time=2m -w=5 -b=10
 ```
 
 ## Compile:
