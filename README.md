@@ -1,19 +1,18 @@
 # Elasticsearch Migrate Tool
-//forked from: https://github.com/hoffoo/elasticsearch-dump/releases/
-//modified by Medcl
+//forked from: https://github.com/hoffoo/elasticsearch-dump/
 
 ## EXAMPLE:
 
 copy index `index_name` from `192.168.1.x` to `192.168.1.y:9200`
 
 ```
-./bin/esdumper  -s http://192.168.1.x:9200   -d http://192.168.1.y:9200 -i index_name --docs-only  --time=2m -w=5 -b=10
+./bin/esmove  -s http://192.168.1.x:9200   -d http://192.168.1.y:9200 -x index_name --docs-only  --time=2m -w=5 -b=10
 ```
 
 copy index `src_index` from `192.168.1.x` to `192.168.1.y:9200` and save with `dest_index`
 
 ```
-./bin/esdumper -s http://localhost:9200 -d http://localhost:9200 -i src_index -y dest_index --docs-only --time=2m -w=5 -b=10
+./bin/esmove -s http://localhost:9200 -d http://localhost:9200 -x src_index -y dest_index --docs-only --time=2m -w=5 -b=10
 ```
 
 ## Compile:
@@ -36,10 +35,18 @@ Application Options:
   -a, --all         copy indexes starting with . and _ (false)
   -w, --workers=    concurrency (1)
       --settings    copy sharding settings from source (true)
-      --green       wait for both hosts cluster status to be green before dump. otherwise yellow is okay (false)
+      --green       wait for both hosts cluster status to be green before move. otherwise yellow is okay (false)
   -b  bulk_size 	bulk size in MB" default:100
 
 ```
+
+Versions(Tested)
+--------
+
+From       | To
+-----------|-----------
+2.x | 2.x
+2.x | 5.0
 
 
 ## NOTES:

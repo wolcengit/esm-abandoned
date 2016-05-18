@@ -11,63 +11,11 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/cheggaaa/pb"
+	log "github.com/cihub/seelog"
 	goflags "github.com/jessevdk/go-flags"
+	gorequest "github.com/parnurzeal/gorequest"
+	pb "gopkg.in/cheggaaa/pb.v1"
 )
-
-type Indexes map[string]interface{}
-
-type Document struct {
-	Index  string                 `json:"_index"`
-	Type   string                 `json:"_type"`
-	Id     string                 `json:"_id"`
-	source map[string]interface{} `json:"_source"`
-}
-
-type Scroll struct {
-	ScrollId string `json:"_scroll_id"`
-	TimedOut bool   `json:"timed_out"`
-	Hits     struct {
-		Total int           `json:"total"`
-		Docs  []interface{} `json:"hits"`
-	} `json:"hits"`
-	Shards struct {
-		Failures []struct {
-			Status int    `json:"status"`
-			Reason string `json:"reason"`
-		} `json:"failures"`
-	} `json:"_shards"`
-}
-
-type ClusterHealth struct {
-	Name   string `json:"cluster_name"`
-	Status string `json:"status"`
-}
-
-type Config struct {
-	FlushLock sync.Mutex
-	DocChan   chan map[string]interface{}
-	ErrChan   chan error
-	Uid       string // es scroll uid
-
-	// config options
-	SrcEs             string `short:"s" long:"source"  description:"source elasticsearch instance" required:"true"`
-	DstEs             string `short:"d" long:"dest"    description:"destination elasticsearch instance" required:"true"`
-	DocBufferCount    int    `short:"c" long:"count"   description:"number of documents at a time: ie \"size\" in the scroll request" default:"100"`
-	ScrollTime        string `short:"t" long:"time"    description:"scroll time" default:"1m"`
-	Destructive       bool   `short:"f" long:"force"   description:"delete destination index before copying"`
-	ShardsCount       int    `long:"shards"            description:"set a number of shards on newly created indexes"`
-	DocsOnly          bool   `long:"docs-only"         description:"load documents only, do not try to recreate indexes"`
-	CreateIndexesOnly bool   `long:"index-only"        description:"only create indexes, do not load documents"`
-	EnableReplication bool   `long:"replicate"         description:"enable replication while indexing into the new indexes"`
-	IndexNames        string `short:"i" long:"indexes" description:"list of indexes to copy, comma separated" default:"_all"`
-	DestIndexName     string `short:"y" long:"dest_indexe" description:"dest index name to save" default:""`
-	CopyAllIndexes    bool   `short:"a" long:"all"     description:"copy indexes starting with . and _"`
-	Workers           int    `short:"w" long:"workers" description:"concurrency" default:"1"`
-	BulkSizeInMB      int    `short:"b" long:"bulk_size" description:"bulk size in MB" default:"100"`
-	NoCopySettings    bool   `long:"settings"          description:"copy sharding settings from source"`
-	WaitForGreen      bool   `long:"green"             description:"wait for both hosts cluster status to be green before dump. otherwise yellow is okay"`
-}
 
 func main() {
 
@@ -75,75 +23,115 @@ func main() {
 
 	c := Config{
 		FlushLock: sync.Mutex{},
-		ErrChan:   make(chan error),
 	}
 
 	// parse args
 	_, err := goflags.Parse(&c)
 	if err != nil {
-		fmt.Println(err)
+		log.Error(err)
 		return
 	}
+
+	setInitLogging(c.LogLevel)
 
 	// enough of a buffer to hold all the search results across all workers
-	c.DocChan = make(chan map[string]interface{}, c.DocBufferCount*c.Workers)
+	c.DocChan = make(chan map[string]interface{}, c.DocBufferCount*c.Workers*10)
 
-	// get all indexes from source
-	idxs := Indexes{}
-	if err := c.GetIndexes(c.SrcEs, &idxs); err != nil {
-		fmt.Println(err)
+	//get source es version
+	srcESVersion, errs := c.ClusterVersion(c.SrcEs)
+	if errs != nil {
 		return
 	}
 
+	if strings.HasPrefix("5.", srcESVersion.Version.Number) {
+		api:=new(ESAPIV5)
+		api.Host=c.SrcEs
+		c.SrcESAPI = api
+	} else {
+		api:=new(ESAPIV0)
+		api.Host=c.SrcEs
+		c.SrcESAPI = api
+	}
+
+	//get target es version
+	descESVersion, errs := c.ClusterVersion(c.DstEs)
+	if errs != nil {
+		return
+	}
+
+	if strings.HasPrefix("5.", descESVersion.Version.Number) {
+		api:=new(ESAPIV5)
+		api.Host=c.DstEs
+		c.DescESAPI = api
+	} else {
+		api:=new(ESAPIV0)
+		api.Host=c.DstEs
+		c.DescESAPI = api
+	}
+
+	// get all indexes from source
+
+	indexNames,idxs,err := c.SrcESAPI.GetIndexSettings(c.CopyAllIndexes,c.SrcIndexNames);
+	if(err!=nil){
+		log.Error(err)
+		return
+	}
+
+	c.SrcIndexNames=indexNames
+
 	// copy index settings if user asked
-	if c.ShardsCount > 0 {
-		for name, _ := range idxs {
-			idxs.SetShardCount(name, fmt.Sprint(c.ShardsCount))
-		}
-	} else if c.NoCopySettings == false {
-		if err := c.CopyShardingSettings(&idxs); err != nil {
-			fmt.Println(err)
+	if c.CopyIndexSettings == true {
+		if err := c.CopyIndexSetting(idxs); err != nil {
+			log.Error(err)
 			return
 		}
 	}
 
-	// disable replication
+	// overwrite index shard settings
+	if c.ShardsCount > 0 {
+		for name := range *idxs {
+			idxs.SetShardCount(name, fmt.Sprint(c.ShardsCount))
+		}
+	}
+
+	// disable replication in settings
 	if c.EnableReplication == false {
 		idxs.DisableReplication()
 	}
 
-	if c.DocsOnly == false {
+	if c.IndexDocsOnly == false {
 		// delete remote indexes if user asked
 		if c.Destructive == true {
-			if err := c.DeleteIndexes(&idxs); err != nil {
-				fmt.Println(err)
+			if err := c.DeleteIndexes(idxs); err != nil {
+				log.Error(err)
 				return
 			}
 		}
 
 		// create indexes on DstEs
-		if err := c.CreateIndexes(&idxs); err != nil {
-			fmt.Println(err)
+		if err := c.CreateIndexes(idxs); err != nil {
+			log.Error(err)
 			return
 		}
 	}
 
 	// if we only want to create indexes, we are done here, return
 	if c.CreateIndexesOnly {
-		fmt.Println("Indexes created, done")
+		log.Info("Indexes created, done")
 		return
 	}
 
-	// wait for cluster state to be okay before dumping
+	// wait for cluster state to be okay before moving
 	timer := time.NewTimer(time.Second * 3)
+
 	for {
-		if status, ready := c.ClusterReady(c.SrcEs); !ready {
-			fmt.Printf("%s at %s is %s, delaying dump\n", status.Name, c.SrcEs, status.Status)
+		if status, ready := c.ClusterReady(c.SrcESAPI); !ready {
+			log.Infof("%s at %s is %s, delaying move ", status.Name, c.SrcEs, status.Status)
 			<-timer.C
 			continue
 		}
-		if status, ready := c.ClusterReady(c.DstEs); !ready {
-			fmt.Printf("%s at %s is %s, delaying dump\n", status.Name, c.DstEs, status.Status)
+		if status, ready := c.ClusterReady(c.DescESAPI); !ready {
+			log.Infof("%s at %s is %s, delaying move ", status.Name, c.DstEs, status.Status)
 			<-timer.C
 			continue
 		}
@@ -151,82 +139,91 @@ func main() {
 		timer.Stop()
 		break
 	}
-	fmt.Println("starting dump..")
+
+	log.Info("starting move..")
 
 	// start scroll
-	scroll, err := c.NewScroll()
+	scroll, err := c.SrcESAPI.NewScroll(c.SrcIndexNames,c.ScrollTime,c.DocBufferCount)
 	if err != nil {
-		fmt.Println(err)
+		log.Error(err)
 		return
 	}
 
 	if scroll != nil && scroll.Hits.Docs != nil {
 		// create a progressbar and start a docCount
-		bar := pb.StartNew(scroll.Hits.Total)
-		var docCount int
+		fetchBar := pb.New(scroll.Hits.Total).Prefix("Fetch ")
+		bulkBar := pb.New(scroll.Hits.Total).Prefix("Bulk ")
 
+		// start pool
+		pool, err := pb.StartPool(fetchBar, bulkBar)
+		if err != nil {
+			panic(err)
+		}
+
+		// update bars
+		var docCount int
 		wg := sync.WaitGroup{}
 		wg.Add(c.Workers)
 		for i := 0; i < c.Workers; i++ {
-			go c.NewWorker(&docCount, bar, &wg)
+			go c.NewWorker(&docCount, bulkBar, &wg)
 		}
-
-		// print errors
-		go func() {
-			for {
-				err := <-c.ErrChan
-				fmt.Println(err)
-			}
-		}()
 
 		// loop scrolling until done
-		for scroll.Next(&c) == false {
+		for scroll.Next(&c, fetchBar) == false {
 		}
+		fetchBar.Finish()
 
 		// finished, close doc chan and wait for goroutines to be done
 		close(c.DocChan)
 		wg.Wait()
-		bar.FinishPrint(fmt.Sprintln("Indexed", docCount, "documents"))
-
+		bulkBar.Finish()
+		// close pool
+		pool.Stop()
 	}
-	
+
+}
+
+func setInitLogging(logLevel string) {
+
+	logLevel = strings.ToLower(logLevel)
+
+	testConfig := `
+	<seelog  type="sync" minlevel="`
+	testConfig = testConfig + logLevel
+	testConfig = testConfig + `">
+		<outputs formatid="main">
+			<filter levels="error">
+				<file path="./log/gopa.log"/>
+			</filter>
+			<console formatid="main" />
+		</outputs>
+		<formats>
+			<format id="main" format="[%Date(01-02) %Time] [%LEV] [%File:%Line,%FuncShort] %Msg%n"/>
+		</formats>
+	</seelog>`
+
+	logger, err := log.LoggerFromConfigAsString(testConfig)
+	if err != nil {
+		log.Error("init config error,", err)
+	}
+	err = log.ReplaceLogger(logger)
+	if err != nil {
+		log.Error("init config error,", err)
+	}
 }
 
 // Stream from source es instance. "done" is an indicator that the stream is
 // over
-func (s *Scroll) Next(c *Config) (done bool) {
+func (s *Scroll) Next(c *Config, bar *pb.ProgressBar) (done bool) {
 
-	//  curl -XGET 'http://es-0.9:9200/_search/scroll?scroll=5m'
-	id := bytes.NewBufferString(s.ScrollId)
-
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", c.SrcEs, c.ScrollTime,id), nil)
+	scroll,err:=c.SrcESAPI.NextScroll(c.ScrollTime,s.ScrollId)
 	if err != nil {
-		c.ErrChan <- err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		c.ErrChan <- err
-	}
-	defer resp.Body.Close()
-
-	// decode elasticsearch scroll response
-	dec := json.NewDecoder(resp.Body)
-
-	// body, _ := ioutil.ReadAll(resp.Body)
-	// bodystr := string(body);
-	// fmt.Println(bodystr)
-
-
-	scroll := &Scroll{}
-	err = dec.Decode(&scroll)
-	if err != nil {
-		c.ErrChan <- err
-		return
+		log.Error(err)
+		return false
 	}
 
-
-	if( scroll.Hits.Docs == nil || len(scroll.Hits.Docs)<=0){
-		fmt.Println("scroll result is empty")
+	if scroll.Hits.Docs == nil || len(scroll.Hits.Docs) <= 0 {
+		log.Debug("scroll result is empty")
 		return true
 	}
 
@@ -237,7 +234,7 @@ func (s *Scroll) Next(c *Config) (done bool) {
 			break
 		case 404:
 			// this may indicate bug
-			c.ErrChan <- fmt.Errorf("looks like we dumped all we could...")
+			c.ErrChan <- fmt.Errorf("looks like we moved all we could...")
 		default:
 			c.ErrChan <- fmt.Errorf("scroll response: %s", stream)
 			// flush and quit
@@ -245,9 +242,13 @@ func (s *Scroll) Next(c *Config) (done bool) {
 		}
 	*/
 
+	//update progress bar
+	bar.Add(len(scroll.Hits.Docs))
+
 	// show any failures
 	for _, failure := range scroll.Shards.Failures {
-		c.ErrChan <- fmt.Errorf(failure.Reason)
+		reason, _ := json.Marshal(failure.Reason)
+		log.Errorf(string(reason))
 	}
 
 	// write all the docs into a channel
@@ -255,11 +256,15 @@ func (s *Scroll) Next(c *Config) (done bool) {
 		c.DocChan <- docI.(map[string]interface{})
 	}
 
+	//update scrollId
+	s.ScrollId=scroll.ScrollId
+
 	return
 }
 
-func (c *Config) NewWorker(docCount *int, bar *pb.ProgressBar, wg *sync.WaitGroup) {
+func (c *Config) NewWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitGroup) {
 
+	bulkItemSize := 0
 	mainBuf := bytes.Buffer{}
 	docBuf := bytes.Buffer{}
 	docEnc := json.NewEncoder(&docBuf)
@@ -272,7 +277,7 @@ READ_DOCS:
 		// this check is in case the document is an error with scroll stuff
 		if status, ok := docI["status"]; ok {
 			if status.(int) == 404 {
-				fmt.Println("error: ", docI["response"])
+				log.Error("error: ", docI["response"])
 				continue
 			}
 		}
@@ -280,16 +285,17 @@ READ_DOCS:
 		// sanity check
 		for _, key := range []string{"_index", "_type", "_source", "_id"} {
 			if _, ok := docI[key]; !ok {
-				fmt.Println("failed parsing document: %v", docI)
+				//json,_:=json.Marshal(docI)
+				//log.Errorf("failed parsing document: %v", string(json))
 				break READ_DOCS
 			}
 		}
 
 		var tempDestIndexName string
-		tempDestIndexName=docI["_index"].(string)
+		tempDestIndexName = docI["_index"].(string)
 
-		if(c.DestIndexName != ""){
-			tempDestIndexName=c.DestIndexName
+		if c.DestIndexNames != "" {
+			tempDestIndexName = c.DestIndexNames
 		}
 
 		doc := Document{
@@ -306,7 +312,7 @@ READ_DOCS:
 
 		// sanity check
 		if len(doc.Index) == 0 || len(doc.Id) == 0 || len(doc.Type) == 0 {
-			c.ErrChan <- fmt.Errorf("failed decoding document: %+v", doc)
+			log.Errorf("failed decoding document: %+v", doc)
 			continue
 		}
 
@@ -315,85 +321,59 @@ READ_DOCS:
 			"create": doc,
 		}
 		if err = docEnc.Encode(post); err != nil {
-			c.ErrChan <- err
+			log.Error(err)
 		}
 		if err = docEnc.Encode(doc.source); err != nil {
-			c.ErrChan <- err
+			log.Error(err)
 		}
 
 		// if we approach the 100mb es limit, flush to es and reset mainBuf
 		if mainBuf.Len()+docBuf.Len() > (c.BulkSizeInMB * 1000000) {
-			c.BulkPost(&mainBuf)
+			c.DescESAPI.Bulk(&mainBuf)
+			pb.Add(bulkItemSize)
+			bulkItemSize = 0
 		}
 
 		// append the doc to the main buffer
 		mainBuf.Write(docBuf.Bytes())
 		// reset for next document
+		bulkItemSize++
 		docBuf.Reset()
-		bar.Increment()
 		(*docCount)++
 	}
 
 WORKER_DONE:
 	if docBuf.Len() > 0 {
 		mainBuf.Write(docBuf.Bytes())
+		bulkItemSize++
 	}
-	c.BulkPost(&mainBuf)
+	c.DescESAPI.Bulk(&mainBuf)
+	pb.Add(bulkItemSize)
+	bulkItemSize = 0
 	wg.Done()
 }
 
-func (c *Config) GetIndexes(host string, idxs *Indexes) (err error) {
+func (c *Config)ClusterVersion(host string) (*ClusterVersion, []error) {
 
-	resp, err := http.Get(fmt.Sprintf("%s/%s/_mapping", host, c.IndexNames))
+	url := fmt.Sprintf("%s", host)
+	_, body, errs := Get(url)
+	if errs != nil {
+		log.Error(errs)
+		return nil,errs
+	}
+
+	log.Debug(body)
+
+	version := &ClusterVersion{}
+	err := json.Unmarshal([]byte(body), version)
+
 	if err != nil {
-		return
+		log.Error(body, errs)
+		return nil,errs
 	}
-	defer resp.Body.Close()
-
-	dec := json.NewDecoder(resp.Body)
-	err = dec.Decode(idxs)
-
-	// always ignore internal _ indexes
-	for name, _ := range *idxs {
-		if name[0] == '_' {
-			delete(*idxs, name)
-		}
-	}
-
-	// remove indexes that start with . if user asked for it
-	if c.CopyAllIndexes == false {
-		for name, _ := range *idxs {
-			switch name[0] {
-			case '.':
-				delete(*idxs, name)
-			case '_':
-				delete(*idxs, name)
-
-			}
-		}
-	}
-
-	// if _all indexes limit the list of indexes to only these that we kept
-	// after looking at mappings
-	if c.IndexNames == "_all" {
-		var newIndexes []string
-		for name, _ := range *idxs {
-			newIndexes = append(newIndexes, name)
-		}
-		c.IndexNames = strings.Join(newIndexes, ",")
-	}
-
-	// wrap in mappings if dumping from super old es
-	for name, idx := range *idxs {
-		if _, ok := idx.(map[string]interface{})["mappings"]; !ok {
-			(*idxs)[name] = map[string]interface{}{
-				"mappings": idx,
-			}
-		}
-	}
-
-	return
+	return version,nil
 }
+
 
 // CreateIndexes on remodeleted ES instance
 func (c *Config) CreateIndexes(idxs *Indexes) (err error) {
@@ -414,7 +394,7 @@ func (c *Config) CreateIndexes(idxs *Indexes) (err error) {
 			return fmt.Errorf("failed creating index: %s", string(b))
 		}
 
-		fmt.Println("created index: ", name)
+		log.Info("created index: ", name)
 	}
 
 	return
@@ -448,13 +428,13 @@ func (c *Config) DeleteIndexes(idxs *Indexes) (err error) {
 			return fmt.Errorf("failed deleting index: %s", string(b))
 		}
 
-		fmt.Println("deleted index: ", name)
+		log.Error("deleted index: ", name)
 	}
 
 	return
 }
 
-func (c *Config) CopyShardingSettings(idxs *Indexes) (err error) {
+func (c *Config) CopyIndexSetting(idxs *Indexes) (err error) {
 
 	// get all settings
 	allSettings := map[string]interface{}{}
@@ -476,6 +456,7 @@ func (c *Config) CopyShardingSettings(idxs *Indexes) (err error) {
 	}
 
 	for name, index := range *idxs {
+		//TODO 验证 analyzer等setting是否生效
 		if settings, ok := allSettings[name]; !ok {
 			return fmt.Errorf("couldnt find index %s", name)
 		} else {
@@ -527,50 +508,10 @@ func (idxs *Indexes) DisableReplication() {
 	}
 }
 
-// make the initial scroll req
-func (c *Config) NewScroll() (scroll *Scroll, err error) {
 
-	// curl -XGET 'http://es-0.9:9200/_search?search_type=scan&scroll=10m&size=50'
-	url := fmt.Sprintf("%s/%s/_search?search_type=scan&scroll=%s&size=%d", c.SrcEs, c.IndexNames, c.ScrollTime, c.DocBufferCount)
-	resp, err := http.Get(url)
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
+func (c *Config) ClusterReady(api ESAPI) (*ClusterHealth, bool) {
 
-	dec := json.NewDecoder(resp.Body)
-
-	scroll = &Scroll{}
-	err = dec.Decode(scroll)
-
-	return
-}
-
-// Post to es as bulk and reset the data buffer
-func (c *Config) BulkPost(data *bytes.Buffer) {
-
-	c.FlushLock.Lock()
-	defer c.FlushLock.Unlock()
-
-	data.WriteRune('\n')
-	resp, err := http.Post(fmt.Sprintf("%s/_bulk", c.DstEs), "", data)
-	if err != nil {
-		c.ErrChan <- err
-		return
-	}
-
-	defer resp.Body.Close()
-	defer data.Reset()
-	if resp.StatusCode != 200 {
-		b, _ := ioutil.ReadAll(resp.Body)
-		c.ErrChan <- fmt.Errorf("bad bulk response: %s", string(b))
-		return
-	}
-}
-
-func (c *Config) ClusterReady(host string) (*ClusterHealth, bool) {
-
-	health := ClusterStatus(host)
+	health := api.ClusterHealth()
 	if health.Status == "red" {
 		return health, false
 	}
@@ -586,17 +527,23 @@ func (c *Config) ClusterReady(host string) (*ClusterHealth, bool) {
 	return health, false
 }
 
-func ClusterStatus(host string) *ClusterHealth {
 
-	resp, err := http.Get(fmt.Sprintf("%s/_cluster/health", host))
-	if err != nil {
-		return &ClusterHealth{Name: host, Status: "unreachable"}
-	}
-	defer resp.Body.Close()
+func Get(url string) (*http.Response, string, []error) {
+	request := gorequest.New() //.SetBasicAuth("username", "password")
 
-	health := &ClusterHealth{}
-	dec := json.NewDecoder(resp.Body)
-	err = dec.Decode(&health)
+	resp, body, errs := request.Get(url).End()
 
-	return health
+	return resp, body, errs
+
+	//reuse
+	//resp, body, errs := gorequest.New().Get("http://example.com/").End()
+
 }
+
+func Post(url string, body []byte) {
+	request := gorequest.New() //.SetBasicAuth("username", "password")
+
+	//resp, body, errs :=
+	request.Post(url).Send(body).End()
+}
+

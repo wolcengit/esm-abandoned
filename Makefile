@@ -6,16 +6,16 @@ export GOPATH=$(NEWGOPATH)
 
 
 build: clean config
-	go build  -o bin/esdumper
+	go build  -o bin/esmove
 
 tar: build
-	tar cfz bin/esdumper.tar.gz bin/esdumper
+	tar cfz bin/esmove.tar.gz bin/esmove
 
 cross-build: clean config
 	go test
-	GOOS=windows GOARCH=amd64 go build -o bin/windows64/esdumper.exe
-	GOOS=darwin  GOARCH=amd64 go build -o bin/darwin64/esdumper
-	GOOS=linux  GOARCH=amd64 go build -o bin/linux64/esdumper
+	GOOS=windows GOARCH=amd64 go build -o bin/windows64/esmove.exe
+	GOOS=darwin  GOARCH=amd64 go build -o bin/darwin64/esmove
+	GOOS=linux  GOARCH=amd64 go build -o bin/linux64/esmove
 
 
 all: clean config cross-compile cross-build
@@ -35,9 +35,11 @@ clean:
 config:
 	@echo "get Dependencies"
 	go env
-	go get github.com/cheggaaa/pb
+	go get gopkg.in/cheggaaa/pb.v1
 	go get github.com/jessevdk/go-flags
 	go get github.com/olekukonko/ts
+	go get github.com/cihub/seelog
+	go get github.com/parnurzeal/gorequest
 
 dist: cross-build package
 
