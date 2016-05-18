@@ -16,12 +16,17 @@ copy index `src_index` from `192.168.1.x` to `192.168.1.y:9200` and save with `d
 ```
 
 ## Compile:
+
 1. make build
 2. make cross-build 
 
+## Download
+https://github.com/medcl/elasticsearch-dump/releases
+
+
+## Options
 
 ```
-Application Options:
   -s, --source=     source elasticsearch instance
   -d, --dest=       destination elasticsearch instance
   -c, --count=      number of documents at a time: ie "size" in the scroll request (100)
