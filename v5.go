@@ -16,7 +16,14 @@ limitations under the License.
 
 package main
 
-import "bytes"
+import (
+	"bytes"
+	log "github.com/cihub/seelog"
+	"encoding/json"
+	"io/ioutil"
+	"fmt"
+	"net/http"
+)
 
 type ESAPIV5 struct{
 	ESAPIV0
@@ -35,9 +42,62 @@ func (s *ESAPIV5) GetIndexSettings(copyAllIndexes bool,indexNames string)(string
 }
 func (s *ESAPIV5) UpdateIndexSettings(){}
 func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount int)(scroll *Scroll, err error){
-	return s.ESAPIV0.NewScroll(indexNames,scrollTime,docBufferCount)
+	url := fmt.Sprintf("%s/%s/_search?scroll=%s&size=%d", s.Host, indexNames, scrollTime,docBufferCount)
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Error(err)
+		return nil,err
+	}
+	defer resp.Body.Close()
+
+	body,err:=ioutil.ReadAll(resp.Body)
+
+	log.Debug("new scroll,",string(body))
+
+	if err != nil {
+		log.Error(err)
+		return nil,err
+	}
+
+	scroll = &Scroll{}
+	err = json.Unmarshal(body,scroll)
+	if err != nil {
+		log.Error(err)
+		return nil,err
+	}
+
+	return scroll,err
 }
 func (s *ESAPIV5) NextScroll(scrollTime string,scrollId string)(*Scroll,error)  {
-	return s.ESAPIV0.NextScroll(scrollId,scrollId)
+	id := bytes.NewBufferString(scrollId)
+
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", s.Host, scrollTime, id), nil)
+	if err != nil {
+		log.Error(err)
+		return nil,err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Error(err)
+		return nil,err
+	}
+	defer resp.Body.Close()
+
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Error(err)
+		return nil,err
+	}
+
+	// decode elasticsearch scroll response
+	scroll := &Scroll{}
+	err = json.Unmarshal(data, &scroll)
+	if err != nil {
+		log.Error(string(data))
+		log.Error(err)
+		return nil,err
+	}
+
+	return scroll,nil
 }
 

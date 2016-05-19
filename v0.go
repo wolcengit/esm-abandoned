@@ -143,16 +143,28 @@ func (s *ESAPIV0) NewScroll(indexNames string,scrollTime string,docBufferCount i
 	url := fmt.Sprintf("%s/%s/_search?search_type=scan&scroll=%s&size=%d", s.Host, indexNames, scrollTime, docBufferCount)
 	resp, err := http.Get(url)
 	if err != nil {
-		return
+		log.Error(err)
+		return nil,err
 	}
 	defer resp.Body.Close()
 
-	dec := json.NewDecoder(resp.Body)
+	body,err:=ioutil.ReadAll(resp.Body)
+
+	log.Debug("new scroll,",string(body))
+
+	if err != nil {
+		log.Error(err)
+		return nil,err
+	}
 
 	scroll = &Scroll{}
-	err = dec.Decode(scroll)
+	err = json.Unmarshal(body,scroll)
+	if err != nil {
+		log.Error(err)
+		return nil,err
+	}
 
-	return
+	return scroll,err
 }
 
 func (s *ESAPIV0) NextScroll(scrollTime string,scrollId string)(*Scroll,error)  {

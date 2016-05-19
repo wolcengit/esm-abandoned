@@ -43,11 +43,13 @@ func main() {
 		return
 	}
 
-	if strings.HasPrefix("5.", srcESVersion.Version.Number) {
+	if strings.HasPrefix(srcESVersion.Version.Number,"5.") {
+		log.Debug("src es is V5,",srcESVersion.Version.Number)
 		api:=new(ESAPIV5)
 		api.Host=c.SrcEs
 		c.SrcESAPI = api
 	} else {
+		log.Debug("src es is not V5,",srcESVersion.Version.Number)
 		api:=new(ESAPIV0)
 		api.Host=c.SrcEs
 		c.SrcESAPI = api
@@ -59,11 +61,13 @@ func main() {
 		return
 	}
 
-	if strings.HasPrefix("5.", descESVersion.Version.Number) {
+	if strings.HasPrefix(descESVersion.Version.Number,"5.") {
+		log.Debug("dest es is V5,",descESVersion.Version.Number)
 		api:=new(ESAPIV5)
 		api.Host=c.DstEs
 		c.DescESAPI = api
 	} else {
+		log.Debug("dest es is not V5,",descESVersion.Version.Number)
 		api:=new(ESAPIV0)
 		api.Host=c.DstEs
 		c.DescESAPI = api
@@ -168,6 +172,8 @@ func main() {
 			go c.NewWorker(&docCount, bulkBar, &wg)
 		}
 
+		scroll.ProcessScrollResult(&c,fetchBar)
+
 		// loop scrolling until done
 		for scroll.Next(&c, fetchBar) == false {
 		}
@@ -214,6 +220,23 @@ func setInitLogging(logLevel string) {
 
 // Stream from source es instance. "done" is an indicator that the stream is
 // over
+func (s *Scroll) ProcessScrollResult(c *Config, bar *pb.ProgressBar){
+
+	//update progress bar
+	bar.Add(len(s.Hits.Docs))
+
+	// show any failures
+	for _, failure := range s.Shards.Failures {
+		reason, _ := json.Marshal(failure.Reason)
+		log.Errorf(string(reason))
+	}
+
+	// write all the docs into a channel
+	for _, docI := range s.Hits.Docs {
+		c.DocChan <- docI.(map[string]interface{})
+	}
+}
+
 func (s *Scroll) Next(c *Config, bar *pb.ProgressBar) (done bool) {
 
 	scroll,err:=c.SrcESAPI.NextScroll(c.ScrollTime,s.ScrollId)
@@ -227,34 +250,7 @@ func (s *Scroll) Next(c *Config, bar *pb.ProgressBar) (done bool) {
 		return true
 	}
 
-	// XXX this might be bad, but assume we are done
-	/*
-		switch resp.StatusCode {
-		case 200:
-			break
-		case 404:
-			// this may indicate bug
-			c.ErrChan <- fmt.Errorf("looks like we moved all we could...")
-		default:
-			c.ErrChan <- fmt.Errorf("scroll response: %s", stream)
-			// flush and quit
-			return true
-		}
-	*/
-
-	//update progress bar
-	bar.Add(len(scroll.Hits.Docs))
-
-	// show any failures
-	for _, failure := range scroll.Shards.Failures {
-		reason, _ := json.Marshal(failure.Reason)
-		log.Errorf(string(reason))
-	}
-
-	// write all the docs into a channel
-	for _, docI := range scroll.Hits.Docs {
-		c.DocChan <- docI.(map[string]interface{})
-	}
+	scroll.ProcessScrollResult(c,bar)
 
 	//update scrollId
 	s.ScrollId=scroll.ScrollId
@@ -294,8 +290,8 @@ READ_DOCS:
 		var tempDestIndexName string
 		tempDestIndexName = docI["_index"].(string)
 
-		if c.DestIndexNames != "" {
-			tempDestIndexName = c.DestIndexNames
+		if c.DestIndexName != "" {
+			tempDestIndexName = c.DestIndexName
 		}
 
 		doc := Document{
