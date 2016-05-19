@@ -1,7 +1,8 @@
 # Elasticsearch Migrate Tool
 //forked from: https://github.com/hoffoo/elasticsearch-dump/
 
-[![asciicast](https://asciinema.org/a/3rol81rlji5p9owkib9yq2qbo.png)](https://asciinema.org/a/3rol81rlji5p9owkib9yq2qbo)
+[![asciicast](https://asciinema.org/a/e562wy1ro30yboznkj5f539md.png)](https://asciinema.org/a/e562wy1ro30yboznkj5f539md)
+
 
 ## EXAMPLE:
 
