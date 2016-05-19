@@ -15,7 +15,7 @@ copy index `src_index` from `192.168.1.x` to `192.168.1.y:9200` and save with `d
 ./bin/esmove -s http://localhost:9200 -d http://localhost:9200 -x src_index -y dest_index -w=5 -b=100
 ```
 
-desc es use basic auth
+support Basic-Auth
 ```
 ./bin/esmove -s http://localhost:9200/ -x "src_index" -y "dest_index-test"  -d http://localhost:9201 -n admin:111111
 ```
