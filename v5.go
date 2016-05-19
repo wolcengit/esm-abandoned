@@ -20,15 +20,12 @@ import (
 	"bytes"
 	log "github.com/cihub/seelog"
 	"encoding/json"
-	"io/ioutil"
 	"fmt"
-	"net/http"
 )
 
 type ESAPIV5 struct{
 	ESAPIV0
 }
-
 
 func (s *ESAPIV5) ClusterHealth() *ClusterHealth {
 	return s.ESAPIV0.ClusterHealth()
@@ -41,18 +38,17 @@ func (s *ESAPIV5) GetIndexSettings(copyAllIndexes bool,indexNames string)(string
 	return s.ESAPIV0.GetIndexSettings(copyAllIndexes,indexNames)
 }
 func (s *ESAPIV5) UpdateIndexSettings(){}
+
 func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount int)(scroll *Scroll, err error){
 	url := fmt.Sprintf("%s/%s/_search?scroll=%s&size=%d", s.Host, indexNames, scrollTime,docBufferCount)
-	resp, err := http.Get(url)
-	if err != nil {
-		log.Error(err)
-		return nil,err
+	resp,body, errs := Get(url,s.Auth)
+	if errs != nil {
+		log.Error(errs)
+		return nil,errs[0]
 	}
 	defer resp.Body.Close()
 
-	body,err:=ioutil.ReadAll(resp.Body)
-
-	log.Debug("new scroll,",string(body))
+	log.Debug("new scroll,",body)
 
 	if err != nil {
 		log.Error(err)
@@ -60,7 +56,7 @@ func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount i
 	}
 
 	scroll = &Scroll{}
-	err = json.Unmarshal(body,scroll)
+	err = json.Unmarshal([]byte(body),scroll)
 	if err != nil {
 		log.Error(err)
 		return nil,err
@@ -71,29 +67,19 @@ func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount i
 func (s *ESAPIV5) NextScroll(scrollTime string,scrollId string)(*Scroll,error)  {
 	id := bytes.NewBufferString(scrollId)
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", s.Host, scrollTime, id), nil)
-	if err != nil {
-		log.Error(err)
-		return nil,err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Error(err)
-		return nil,err
+	url:=fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", s.Host, scrollTime, id)
+	resp,body, errs := Get(url,s.Auth)
+	if errs != nil {
+		log.Error(errs)
+		return nil,errs[0]
 	}
 	defer resp.Body.Close()
 
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Error(err)
-		return nil,err
-	}
-
 	// decode elasticsearch scroll response
 	scroll := &Scroll{}
-	err = json.Unmarshal(data, &scroll)
+	err:= json.Unmarshal([]byte(body), &scroll)
 	if err != nil {
-		log.Error(string(data))
+		log.Error(body)
 		log.Error(err)
 		return nil,err
 	}

@@ -20,22 +20,22 @@ import (
 	"encoding/json"
 	"fmt"
 	log "github.com/cihub/seelog"
-	"net/http"
-	"io/ioutil"
 	"bytes"
 	"strings"
 	"regexp"
+	"net/http"
+	"io/ioutil"
 )
 
 type ESAPIV0 struct{
-	Host string //eg:http://localhost:9200
+	Host string //eg: http://localhost:9200
+	Auth *Auth //eg: user:pass
 }
-
 
 func (s *ESAPIV0) ClusterHealth() *ClusterHealth {
 
 	url := fmt.Sprintf("%s/_cluster/health", s.Host)
-	_, body, errs := Get(url)
+	_, body, errs := Get(url,s.Auth)
 
 	if errs != nil {
 		return &ClusterHealth{Name: s.Host, Status: "unreachable"}
@@ -58,7 +58,20 @@ func (s *ESAPIV0) Bulk(data *bytes.Buffer){
 		return
 	}
 	data.WriteRune('\n')
-	resp, err := http.Post(fmt.Sprintf("%s/_bulk", s.Host), "", data)
+	url:=fmt.Sprintf("%s/_bulk", s.Host)
+
+	client := &http.Client{}
+	reqest, _ := http.NewRequest("POST", url, data)
+	if(s.Auth!=nil){
+		reqest.SetBasicAuth(s.Auth.User,s.Auth.Pass)
+	}
+	resp,errs := client.Do(reqest)
+	if errs != nil {
+		log.Error(errs)
+		return
+	}
+
+	body,err:=ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Error(err)
 		return
@@ -67,22 +80,26 @@ func (s *ESAPIV0) Bulk(data *bytes.Buffer){
 	defer resp.Body.Close()
 	defer data.Reset()
 	if resp.StatusCode != 200 {
-		b, _ := ioutil.ReadAll(resp.Body)
-		log.Errorf("bad bulk response: %s %s", string(b), resp.StatusCode)
+		log.Errorf("bad bulk response: %s %s", body, resp.StatusCode)
 		return
 	}
 }
 
 func (s *ESAPIV0) GetIndexSettings(copyAllIndexes bool,indexNames string)(string,*Indexes,error){
-	resp, err := http.Get(fmt.Sprintf("%s/%s/_mapping", s.Host, indexNames))
-	if err != nil {
-		return "",nil,err
+	url:=fmt.Sprintf("%s/%s/_mapping", s.Host, indexNames)
+	resp,body, errs := Get(url,s.Auth)
+	if errs != nil {
+		log.Error(errs)
+		return "",nil,errs[0]
 	}
 	defer resp.Body.Close()
 
 	idxs := Indexes{}
-	dec := json.NewDecoder(resp.Body)
-	err = dec.Decode(&idxs)
+	er := json.Unmarshal([]byte(body),&idxs)
+
+	if er != nil {
+		return "",nil,er
+	}
 
 	// remove indexes that start with . if user asked for it
 	if copyAllIndexes == false {
@@ -132,7 +149,7 @@ func (s *ESAPIV0) GetIndexSettings(copyAllIndexes bool,indexNames string)(string
 		}
 	}
 
-	return indexNames,&idxs,err
+	return indexNames,&idxs,nil
 }
 
 func (s *ESAPIV0) UpdateIndexSettings(){}
@@ -141,16 +158,14 @@ func (s *ESAPIV0) NewScroll(indexNames string,scrollTime string,docBufferCount i
 
 	// curl -XGET 'http://es-0.9:9200/_search?search_type=scan&scroll=10m&size=50'
 	url := fmt.Sprintf("%s/%s/_search?search_type=scan&scroll=%s&size=%d", s.Host, indexNames, scrollTime, docBufferCount)
-	resp, err := http.Get(url)
+	resp,body, errs := Get(url,s.Auth)
 	if err != nil {
-		log.Error(err)
-		return nil,err
+		log.Error(errs)
+		return nil,errs[0]
 	}
 	defer resp.Body.Close()
 
-	body,err:=ioutil.ReadAll(resp.Body)
-
-	log.Debug("new scroll,",string(body))
+	log.Debug("new scroll,",body)
 
 	if err != nil {
 		log.Error(err)
@@ -158,7 +173,7 @@ func (s *ESAPIV0) NewScroll(indexNames string,scrollTime string,docBufferCount i
 	}
 
 	scroll = &Scroll{}
-	err = json.Unmarshal(body,scroll)
+	err = json.Unmarshal([]byte(body),scroll)
 	if err != nil {
 		log.Error(err)
 		return nil,err
@@ -170,30 +185,20 @@ func (s *ESAPIV0) NewScroll(indexNames string,scrollTime string,docBufferCount i
 func (s *ESAPIV0) NextScroll(scrollTime string,scrollId string)(*Scroll,error)  {
 	//  curl -XGET 'http://es-0.9:9200/_search/scroll?scroll=5m'
 	id := bytes.NewBufferString(scrollId)
+	url:=fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", s.Host, scrollTime, id)
+	resp,body, errs := Get(url,s.Auth)
+	if errs != nil {
+		log.Error(errs)
+		return nil,errs[0]
+	}
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", s.Host, scrollTime, id), nil)
-	if err != nil {
-		log.Error(err)
-		return nil,err
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Error(err)
-		return nil,err
-	}
 	defer resp.Body.Close()
-
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Error(err)
-		return nil,err
-	}
 
 	// decode elasticsearch scroll response
 	scroll := &Scroll{}
-	err = json.Unmarshal(data, &scroll)
+	err := json.Unmarshal([]byte(body), &scroll)
 	if err != nil {
-		log.Error(string(data))
+		log.Error(body)
 		log.Error(err)
 		return nil,err
 	}

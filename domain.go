@@ -69,9 +69,12 @@ type Config struct {
 	Uid       string // es scroll uid
 	SrcESAPI  ESAPI
 	DescESAPI ESAPI
-
+	SrcAuth *Auth
+	DescAuth *Auth
 			 // config options
 	SrcEs             string `short:"s" long:"source"  description:"source elasticsearch instance" required:"true"`
+	SrcEsAuthStr         string `short:"m" long:"source_auth"  description:"basic auth of source elasticsearch instance, eg: user:pass"`
+	DescEsAuthStr        string `short:"n" long:"dest_auth"  description:"basic auth of target elasticsearch instance, eg: user:pass"`
 	DstEs             string `short:"d" long:"dest"    description:"destination elasticsearch instance" required:"true"`
 	DocBufferCount    int    `short:"c" long:"count"   description:"number of documents at a time: ie \"size\" in the scroll request" default:"5000"`
 	ScrollTime        string `short:"t" long:"time"    description:"scroll time" default:"1m"`
@@ -88,3 +91,7 @@ type Config struct {
 	LogLevel          string `short:"v" long:"log"            description:"setting log level,options:trace,debug,info,warn,error"  default:"INFO"`
 }
 
+type Auth struct {
+	User string
+	Pass string
+}

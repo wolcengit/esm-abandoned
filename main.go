@@ -37,8 +37,21 @@ func main() {
 	// enough of a buffer to hold all the search results across all workers
 	c.DocChan = make(chan map[string]interface{}, c.DocBufferCount*c.Workers*10)
 
+
+	//dealing with basic auth
+	if(len(c.SrcEsAuthStr)>0&&strings.Contains(c.SrcEsAuthStr,":")){
+		authArray:=strings.Split(c.SrcEsAuthStr,":")
+		auth:=Auth{User:authArray[0],Pass:authArray[1]}
+		c.SrcAuth=&auth
+	}
+	if(len(c.DescEsAuthStr)>0&&strings.Contains(c.DescEsAuthStr,":")){
+		authArray:=strings.Split(c.DescEsAuthStr,":")
+		auth:=Auth{User:authArray[0],Pass:authArray[1]}
+		c.DescAuth=&auth
+	}
+
 	//get source es version
-	srcESVersion, errs := c.ClusterVersion(c.SrcEs)
+	srcESVersion, errs := c.ClusterVersion(c.SrcEs,c.SrcAuth)
 	if errs != nil {
 		return
 	}
@@ -47,16 +60,18 @@ func main() {
 		log.Debug("src es is V5,",srcESVersion.Version.Number)
 		api:=new(ESAPIV5)
 		api.Host=c.SrcEs
+		api.Auth=c.SrcAuth
 		c.SrcESAPI = api
 	} else {
 		log.Debug("src es is not V5,",srcESVersion.Version.Number)
 		api:=new(ESAPIV0)
 		api.Host=c.SrcEs
+		api.Auth=c.SrcAuth
 		c.SrcESAPI = api
 	}
 
 	//get target es version
-	descESVersion, errs := c.ClusterVersion(c.DstEs)
+	descESVersion, errs := c.ClusterVersion(c.DstEs,c.DescAuth)
 	if errs != nil {
 		return
 	}
@@ -65,12 +80,15 @@ func main() {
 		log.Debug("dest es is V5,",descESVersion.Version.Number)
 		api:=new(ESAPIV5)
 		api.Host=c.DstEs
+		api.Auth=c.DescAuth
 		c.DescESAPI = api
 	} else {
 		log.Debug("dest es is not V5,",descESVersion.Version.Number)
 		api:=new(ESAPIV0)
 		api.Host=c.DstEs
+		api.Auth=c.DescAuth
 		c.DescESAPI = api
+
 	}
 
 	// get all indexes from source
@@ -103,13 +121,14 @@ func main() {
 		if c.DestIndexName != "" {
 			//TODO
 		}else{
-			// create indexes on DstEs
-			if err := c.CreateIndexes(idxs); err != nil {
-				log.Error(err)
-				return
-			}
+			//// create indexes on DstEs
+			//if err := c.CreateIndexes(idxs); err != nil {
+			//	log.Error(err)
+			//	return
+			//}
 		}
 	}
+
 	// wait for cluster state to be okay before moving
 	timer := time.NewTimer(time.Second * 3)
 
@@ -171,6 +190,8 @@ func main() {
 		// close pool
 		pool.Stop()
 	}
+
+	log.Info("done move..")
 
 }
 
@@ -334,10 +355,10 @@ WORKER_DONE:
 	wg.Done()
 }
 
-func (c *Config)ClusterVersion(host string) (*ClusterVersion, []error) {
+func (c *Config)ClusterVersion(host string,auth *Auth) (*ClusterVersion, []error) {
 
 	url := fmt.Sprintf("%s", host)
-	_, body, errs := Get(url)
+	_, body, errs := Get(url,auth)
 	if errs != nil {
 		log.Error(errs)
 		return nil,errs
@@ -460,16 +481,22 @@ func (c *Config) ClusterReady(api ESAPI) (*ClusterHealth, bool) {
 }
 
 
-func Get(url string) (*http.Response, string, []error) {
-	request := gorequest.New() //.SetBasicAuth("username", "password")
+func Get(url string,auth *Auth) (*http.Response, string, []error) {
+	request := gorequest.New()
+	if(auth!=nil){
+		request.SetBasicAuth(auth.User,auth.Pass)
+	}
 
 	resp, body, errs := request.Get(url).End()
 	return resp, body, errs
 
 }
 
-func Post(url string, body []byte) {
-	request := gorequest.New() //.SetBasicAuth("username", "password")
-	request.Post(url).Send(body).End()
+func Post(url string,auth *Auth, body string)(*http.Response, string, []error)  {
+	request := gorequest.New()
+	if(auth!=nil){
+		request.SetBasicAuth(auth.User,auth.Pass)
+	}
+	return request.Post(url).Send(body).End()
 }
 
