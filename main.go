@@ -98,33 +98,18 @@ func main() {
 		}
 	}
 
-	// disable replication in settings
-	if c.EnableReplication == false {
-		idxs.DisableReplication()
-	}
-
 	if c.IndexDocsOnly == false {
-		// delete remote indexes if user asked
-		if c.Destructive == true {
-			if err := c.DeleteIndexes(idxs); err != nil {
+
+		if c.DestIndexName != "" {
+			//TODO
+		}else{
+			// create indexes on DstEs
+			if err := c.CreateIndexes(idxs); err != nil {
 				log.Error(err)
 				return
 			}
 		}
-
-		// create indexes on DstEs
-		if err := c.CreateIndexes(idxs); err != nil {
-			log.Error(err)
-			return
-		}
 	}
-
-	// if we only want to create indexes, we are done here, return
-	if c.CreateIndexesOnly {
-		log.Info("Indexes created, done")
-		return
-	}
-
 	// wait for cluster state to be okay before moving
 	timer := time.NewTimer(time.Second * 3)
 
@@ -396,40 +381,6 @@ func (c *Config) CreateIndexes(idxs *Indexes) (err error) {
 	return
 }
 
-func (c *Config) DeleteIndexes(idxs *Indexes) (err error) {
-
-	for name, idx := range *idxs {
-		body := bytes.Buffer{}
-		enc := json.NewEncoder(&body)
-		enc.Encode(idx)
-
-		req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/%s", c.DstEs, name), nil)
-		if err != nil {
-			return err
-		}
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
-
-		defer resp.Body.Close()
-		if resp.StatusCode == 404 {
-			// thats okay, index doesnt exist
-			continue
-		}
-
-		if resp.StatusCode != 200 {
-			b, _ := ioutil.ReadAll(resp.Body)
-			resp.Body.Close()
-			return fmt.Errorf("failed deleting index: %s", string(b))
-		}
-
-		log.Error("deleted index: ", name)
-	}
-
-	return
-}
-
 func (c *Config) CopyIndexSetting(idxs *Indexes) (err error) {
 
 	// get all settings
@@ -489,21 +440,6 @@ func (idxs *Indexes) SetShardCount(indexName, shards string) {
 	index.(map[string]interface{})["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_shards"] = shards
 }
 
-func (idxs *Indexes) DisableReplication() {
-
-	for name, index := range *idxs {
-		if _, ok := (*idxs)[name].(map[string]interface{})["settings"]; !ok {
-			index.(map[string]interface{})["settings"] = map[string]interface{}{}
-		}
-
-		if _, ok := (*idxs)[name].(map[string]interface{})["settings"].(map[string]interface{})["index"]; !ok {
-			index.(map[string]interface{})["settings"].(map[string]interface{})["index"] = map[string]interface{}{}
-		}
-
-		index.(map[string]interface{})["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_replicas"] = "0"
-	}
-}
-
 
 func (c *Config) ClusterReady(api ESAPI) (*ClusterHealth, bool) {
 
@@ -528,18 +464,12 @@ func Get(url string) (*http.Response, string, []error) {
 	request := gorequest.New() //.SetBasicAuth("username", "password")
 
 	resp, body, errs := request.Get(url).End()
-
 	return resp, body, errs
-
-	//reuse
-	//resp, body, errs := gorequest.New().Get("http://example.com/").End()
 
 }
 
 func Post(url string, body []byte) {
 	request := gorequest.New() //.SetBasicAuth("username", "password")
-
-	//resp, body, errs :=
 	request.Post(url).Send(body).End()
 }
 

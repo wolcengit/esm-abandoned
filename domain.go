@@ -78,8 +78,6 @@ type Config struct {
 	Destructive       bool   `short:"f" long:"force"   description:"delete destination index before copying"`
 	ShardsCount       int    `long:"shards"            description:"set a number of shards on newly created indexes"`
 	IndexDocsOnly     bool   `long:"index_docs_only"          description:"index documents only, do not try to recreate indexes" default:"true"`
-	CreateIndexesOnly bool   `long:"create_index_only"        description:"only create indexes, do not load documents"`
-	EnableReplication bool   `long:"replicate"         description:"enable replication while indexing into the new indexes" default:"false"`
 	SrcIndexNames     string `short:"x" long:"src_indexes" description:"indexes name to copy,support regex and comma separated list" default:"_all"`
 	DestIndexName     string `short:"y" long:"dest_index" description:"indexes name to save, allow only one indexname, original indexname will be used if not specified" default:""`
 	CopyAllIndexes    bool   `short:"a" long:"all"     description:"copy indexes starting with . and _"`

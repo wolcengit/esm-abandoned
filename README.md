@@ -6,13 +6,13 @@
 copy index `index_name` from `192.168.1.x` to `192.168.1.y:9200`
 
 ```
-./bin/esmove  -s http://192.168.1.x:9200   -d http://192.168.1.y:9200 -x index_name --docs-only  --time=2m -w=5 -b=10
+./bin/esmove  -s http://192.168.1.x:9200   -d http://192.168.1.y:9200 -x index_name  -w=5 -b=10
 ```
 
 copy index `src_index` from `192.168.1.x` to `192.168.1.y:9200` and save with `dest_index`
 
 ```
-./bin/esmove -s http://localhost:9200 -d http://localhost:9200 -x src_index -y dest_index --docs-only --time=2m -w=5 -b=10
+./bin/esmove -s http://localhost:9200 -d http://localhost:9200 -x src_index -y dest_index -w=5 -b=100
 ```
 
 ## Compile:
@@ -31,9 +31,7 @@ https://github.com/medcl/elasticsearch-dump/releases
   -d, --dest=       destination elasticsearch instance
   -c, --count=      number of documents at a time: ie "size" in the scroll request (8000)
   -t, --time=       scroll time (1m)
-  -f, --force       delete destination index before copying (false)
       --shards=     set a number of shards on newly created indexes
-      --index-only  only create indexes, do not load documents (true)
   -x, --src_indexes=    list of indexes to copy, comma separated (_all), support wildcard match(*)
   -y, --dest_index=    indexes name to save, allow only one indexname, original indexname will be used if not specified
   -a, --all         copy indexes starting with . and _ (false)
