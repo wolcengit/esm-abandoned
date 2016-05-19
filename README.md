@@ -1,6 +1,8 @@
 # Elasticsearch Migrate Tool
 //forked from: https://github.com/hoffoo/elasticsearch-dump/
 
+[![asciicast](https://asciinema.org/a/3rol81rlji5p9owkib9yq2qbo.png)](https://asciinema.org/a/3rol81rlji5p9owkib9yq2qbo)
+
 ## EXAMPLE:
 
 copy index `index_name` from `192.168.1.x` to `192.168.1.y:9200`

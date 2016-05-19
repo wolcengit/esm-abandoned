@@ -98,6 +98,7 @@ func (s *ESAPIV0) GetIndexSettings(copyAllIndexes bool,indexNames string)(string
 	er := json.Unmarshal([]byte(body),&idxs)
 
 	if er != nil {
+		log.Error(body)
 		return "",nil,er
 	}
 
