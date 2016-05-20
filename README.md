@@ -56,13 +56,18 @@ if download version is not fill you environment,you may try to compile it yourse
 
 ```
 
-Versions(Tested)
+Versions
 --------
 
 From       | To
 -----------|-----------
+1.x | 1.x
+1.x | 2.x
+1.x | 5.0
+2.x | 1.x
 2.x | 2.x
 2.x | 5.0
+5.0 | 1.x
 5.0 | 2.x
 5.0 | 5.0
 
