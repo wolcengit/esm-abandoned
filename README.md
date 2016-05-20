@@ -10,18 +10,18 @@ Support cross version and http basic auth.
 copy index `index_name` from `192.168.1.x` to `192.168.1.y:9200`
 
 ```
-./bin/esmove  -s http://192.168.1.x:9200   -d http://192.168.1.y:9200 -x index_name  -w=5 -b=10 -c 10000
+./bin/esm  -s http://192.168.1.x:9200   -d http://192.168.1.y:9200 -x index_name  -w=5 -b=10 -c 10000
 ```
 
 copy index `src_index` from `192.168.1.x` to `192.168.1.y:9200` and save with `dest_index`
 
 ```
-./bin/esmove -s http://localhost:9200 -d http://localhost:9200 -x src_index -y dest_index -w=5 -b=100
+./bin/esm -s http://localhost:9200 -d http://localhost:9200 -x src_index -y dest_index -w=5 -b=100
 ```
 
 support Basic-Auth
 ```
-./bin/esmove -s http://localhost:9200/ -x "src_index" -y "dest_index-test"  -d http://localhost:9201 -n admin:111111
+./bin/esm -s http://localhost:9200/ -x "src_index" -y "dest_index-test"  -d http://localhost:9201 -n admin:111111
 ```
 
 ## Download
