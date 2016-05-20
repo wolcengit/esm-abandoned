@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -13,7 +12,6 @@ import (
 
 	log "github.com/cihub/seelog"
 	goflags "github.com/jessevdk/go-flags"
-	gorequest "github.com/parnurzeal/gorequest"
 	pb "gopkg.in/cheggaaa/pb.v1"
 )
 
@@ -36,6 +34,7 @@ func main() {
 
 	// enough of a buffer to hold all the search results across all workers
 	c.DocChan = make(chan map[string]interface{}, c.DocBufferCount*c.Workers*10)
+	c.FileChan = make(chan map[string]interface{}, c.DocBufferCount*10)
 
 
 	//dealing with basic auth
@@ -159,8 +158,9 @@ func main() {
 
 	if scroll != nil && scroll.Hits.Docs != nil {
 		// create a progressbar and start a docCount
-		fetchBar := pb.New(scroll.Hits.Total).Prefix("Fetch ")
-		bulkBar := pb.New(scroll.Hits.Total).Prefix("Bulk ")
+		fetchBar := pb.New(scroll.Hits.Total).Prefix("Pull ")
+		bulkBar := pb.New(scroll.Hits.Total).Prefix("Push ")
+
 
 		// start pool
 		pool, err := pb.StartPool(fetchBar, bulkBar)
@@ -173,7 +173,14 @@ func main() {
 		wg := sync.WaitGroup{}
 		wg.Add(c.Workers)
 		for i := 0; i < c.Workers; i++ {
-			go c.NewWorker(&docCount, bulkBar, &wg)
+			go c.NewBulkWorker(&docCount, bulkBar, &wg)
+		}
+
+		// start file write
+		if(len(c.DumpOutFile)>0){
+			go func() {
+
+			}()
 		}
 
 		scroll.ProcessScrollResult(&c,fetchBar)
@@ -195,167 +202,7 @@ func main() {
 
 }
 
-func setInitLogging(logLevel string) {
-
-	logLevel = strings.ToLower(logLevel)
-
-	testConfig := `
-	<seelog  type="sync" minlevel="`
-	testConfig = testConfig + logLevel
-	testConfig = testConfig + `">
-		<outputs formatid="main">
-			<filter levels="error">
-				<file path="./log/gopa.log"/>
-			</filter>
-			<console formatid="main" />
-		</outputs>
-		<formats>
-			<format id="main" format="[%Date(01-02) %Time] [%LEV] [%File:%Line,%FuncShort] %Msg%n"/>
-		</formats>
-	</seelog>`
-
-	logger, err := log.LoggerFromConfigAsString(testConfig)
-	if err != nil {
-		log.Error("init config error,", err)
-	}
-	err = log.ReplaceLogger(logger)
-	if err != nil {
-		log.Error("init config error,", err)
-	}
-}
-
-// Stream from source es instance. "done" is an indicator that the stream is
-// over
-func (s *Scroll) ProcessScrollResult(c *Config, bar *pb.ProgressBar){
-
-	//update progress bar
-	bar.Add(len(s.Hits.Docs))
-
-	// show any failures
-	for _, failure := range s.Shards.Failures {
-		reason, _ := json.Marshal(failure.Reason)
-		log.Errorf(string(reason))
-	}
-
-	// write all the docs into a channel
-	for _, docI := range s.Hits.Docs {
-		c.DocChan <- docI.(map[string]interface{})
-	}
-}
-
-func (s *Scroll) Next(c *Config, bar *pb.ProgressBar) (done bool) {
-
-	scroll,err:=c.SrcESAPI.NextScroll(c.ScrollTime,s.ScrollId)
-	if err != nil {
-		log.Error(err)
-		return false
-	}
-
-	if scroll.Hits.Docs == nil || len(scroll.Hits.Docs) <= 0 {
-		log.Debug("scroll result is empty")
-		return true
-	}
-
-	scroll.ProcessScrollResult(c,bar)
-
-	//update scrollId
-	s.ScrollId=scroll.ScrollId
-
-	return
-}
-
-func (c *Config) NewWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitGroup) {
-
-	bulkItemSize := 0
-	mainBuf := bytes.Buffer{}
-	docBuf := bytes.Buffer{}
-	docEnc := json.NewEncoder(&docBuf)
-
-READ_DOCS:
-	for {
-		var err error
-		docI, open := <-c.DocChan
-
-		// this check is in case the document is an error with scroll stuff
-		if status, ok := docI["status"]; ok {
-			if status.(int) == 404 {
-				log.Error("error: ", docI["response"])
-				continue
-			}
-		}
-
-		// sanity check
-		for _, key := range []string{"_index", "_type", "_source", "_id"} {
-			if _, ok := docI[key]; !ok {
-				//json,_:=json.Marshal(docI)
-				//log.Errorf("failed parsing document: %v", string(json))
-				break READ_DOCS
-			}
-		}
-
-		var tempDestIndexName string
-		tempDestIndexName = docI["_index"].(string)
-
-		if c.DestIndexName != "" {
-			tempDestIndexName = c.DestIndexName
-		}
-
-		doc := Document{
-			Index:  tempDestIndexName,
-			Type:   docI["_type"].(string),
-			source: docI["_source"].(map[string]interface{}),
-			Id:     docI["_id"].(string),
-		}
-
-		// if channel is closed flush and gtfo
-		if !open {
-			goto WORKER_DONE
-		}
-
-		// sanity check
-		if len(doc.Index) == 0 || len(doc.Id) == 0 || len(doc.Type) == 0 {
-			log.Errorf("failed decoding document: %+v", doc)
-			continue
-		}
-
-		// encode the doc and and the _source field for a bulk request
-		post := map[string]Document{
-			"create": doc,
-		}
-		if err = docEnc.Encode(post); err != nil {
-			log.Error(err)
-		}
-		if err = docEnc.Encode(doc.source); err != nil {
-			log.Error(err)
-		}
-
-		// if we approach the 100mb es limit, flush to es and reset mainBuf
-		if mainBuf.Len()+docBuf.Len() > (c.BulkSizeInMB * 1000000) {
-			c.DescESAPI.Bulk(&mainBuf)
-			pb.Add(bulkItemSize)
-			bulkItemSize = 0
-		}
-
-		// append the doc to the main buffer
-		mainBuf.Write(docBuf.Bytes())
-		// reset for next document
-		bulkItemSize++
-		docBuf.Reset()
-		(*docCount)++
-	}
-
-WORKER_DONE:
-	if docBuf.Len() > 0 {
-		mainBuf.Write(docBuf.Bytes())
-		bulkItemSize++
-	}
-	c.DescESAPI.Bulk(&mainBuf)
-	pb.Add(bulkItemSize)
-	bulkItemSize = 0
-	wg.Done()
-}
-
-func (c *Config)ClusterVersion(host string,auth *Auth) (*ClusterVersion, []error) {
+func (c *Config) ClusterVersion(host string,auth *Auth) (*ClusterVersion, []error) {
 
 	url := fmt.Sprintf("%s", host)
 	_, body, errs := Get(url,auth)
@@ -374,32 +221,6 @@ func (c *Config)ClusterVersion(host string,auth *Auth) (*ClusterVersion, []error
 		return nil,errs
 	}
 	return version,nil
-}
-
-
-// CreateIndexes on remodeleted ES instance
-func (c *Config) CreateIndexes(idxs *Indexes) (err error) {
-
-	for name, idx := range *idxs {
-		body := bytes.Buffer{}
-		enc := json.NewEncoder(&body)
-		enc.Encode(idx)
-
-		resp, err := http.Post(fmt.Sprintf("%s/%s", c.DstEs, name), "", &body)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != 200 {
-			b, _ := ioutil.ReadAll(resp.Body)
-			return fmt.Errorf("failed creating index: %s", string(b))
-		}
-
-		log.Info("created index: ", name)
-	}
-
-	return
 }
 
 func (c *Config) CopyIndexSetting(idxs *Indexes) (err error) {
@@ -461,7 +282,6 @@ func (idxs *Indexes) SetShardCount(indexName, shards string) {
 	index.(map[string]interface{})["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_shards"] = shards
 }
 
-
 func (c *Config) ClusterReady(api ESAPI) (*ClusterHealth, bool) {
 
 	health := api.ClusterHealth()
@@ -478,25 +298,5 @@ func (c *Config) ClusterReady(api ESAPI) (*ClusterHealth, bool) {
 	}
 
 	return health, false
-}
-
-
-func Get(url string,auth *Auth) (*http.Response, string, []error) {
-	request := gorequest.New()
-	if(auth!=nil){
-		request.SetBasicAuth(auth.User,auth.Pass)
-	}
-
-	resp, body, errs := request.Get(url).End()
-	return resp, body, errs
-
-}
-
-func Post(url string,auth *Auth, body string)(*http.Response, string, []error)  {
-	request := gorequest.New()
-	if(auth!=nil){
-		request.SetBasicAuth(auth.User,auth.Pass)
-	}
-	return request.Post(url).Send(body).End()
 }
 

@@ -21,6 +21,7 @@ import (
 	log "github.com/cihub/seelog"
 	"encoding/json"
 	"fmt"
+	"errors"
 )
 
 type ESAPIV5 struct{
@@ -48,6 +49,10 @@ func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount i
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != 200 {
+		return nil,errors.New(body)
+	}
+
 	log.Debug("new scroll,",body)
 
 	if err != nil {
@@ -74,6 +79,10 @@ func (s *ESAPIV5) NextScroll(scrollTime string,scrollId string)(*Scroll,error)  
 		return nil,errs[0]
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil,errors.New(body)
+	}
 
 	// decode elasticsearch scroll response
 	scroll := &Scroll{}

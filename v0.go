@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"net/http"
 	"io/ioutil"
+	"errors"
 )
 
 type ESAPIV0 struct{
@@ -93,6 +94,10 @@ func (s *ESAPIV0) GetIndexSettings(copyAllIndexes bool,indexNames string)(string
 		return "",nil,errs[0]
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "",nil,errors.New(body)
+	}
 
 	idxs := Indexes{}
 	er := json.Unmarshal([]byte(body),&idxs)
@@ -173,6 +178,11 @@ func (s *ESAPIV0) NewScroll(indexNames string,scrollTime string,docBufferCount i
 		return nil,err
 	}
 
+
+	if resp.StatusCode != 200 {
+		return nil,errors.New(body)
+	}
+
 	scroll = &Scroll{}
 	err = json.Unmarshal([]byte(body),scroll)
 	if err != nil {
@@ -191,6 +201,10 @@ func (s *ESAPIV0) NextScroll(scrollTime string,scrollId string)(*Scroll,error)  
 	if errs != nil {
 		log.Error(errs)
 		return nil,errs[0]
+	}
+
+	if resp.StatusCode != 200 {
+		return nil,errors.New(body)
 	}
 
 	defer resp.Body.Close()

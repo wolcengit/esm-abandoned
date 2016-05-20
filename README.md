@@ -1,5 +1,6 @@
-# Elasticsearch Migrate Tool
-//forked from: https://github.com/hoffoo/elasticsearch-dump/
+# An Elasticsearch Migration Tool
+
+Support cross version and http basic auth.
 
 [![asciicast](https://asciinema.org/a/e562wy1ro30yboznkj5f539md.png)](https://asciinema.org/a/e562wy1ro30yboznkj5f539md)
 
@@ -23,13 +24,15 @@ support Basic-Auth
 ./bin/esmove -s http://localhost:9200/ -x "src_index" -y "dest_index-test"  -d http://localhost:9201 -n admin:111111
 ```
 
-## Compile:
-
-1. make build
-2. make cross-build 
-
 ## Download
 https://github.com/medcl/elasticsearch-dump/releases
+
+
+## Compile:
+
+if download version is not fill you environment,you may try to compile it yourself. `go` required.
+
+`make build`
 
 
 ## Options
@@ -37,8 +40,8 @@ https://github.com/medcl/elasticsearch-dump/releases
 ```
   -s, --source=     source elasticsearch instance
   -d, --dest=       destination elasticsearch instance
-  -m, --source-auth basic auth of source elasticsearch instance, eg: user:pass
-  -n, --dest-auth   basic auth of target elasticsearch instance, eg: user:pass
+  -m, --source_auth basic auth of source elasticsearch instance, ie: user:pass
+  -n, --dest_auth   basic auth of target elasticsearch instance, ie: user:pass
   -c, --count=      number of documents at a time: ie "size" in the scroll request (10000)
   -t, --time=       scroll time (1m)
       --shards=     set a number of shards on newly created indexes
@@ -46,8 +49,10 @@ https://github.com/medcl/elasticsearch-dump/releases
   -y, --dest_index=    indexes name to save, allow only one indexname, original indexname will be used if not specified
   -a, --all         copy indexes starting with . and _ (false)
   -w, --workers=    concurrency (1)
-  -b  bulk_size 	bulk size in MB" default:5
-  -v  log 	setting log level,options:trace,debug,info,warn,error
+  -b  --bulk_size 	bulk size in MB" default:5
+  -v  --log 	    setting log level,options:trace,debug,info,warn,error
+  -o  --dump_filepath dump to source index to local path
+  -r  --dump_without_metadata don't include the metadata in the the dumpfile  default: false
 
 ```
 
