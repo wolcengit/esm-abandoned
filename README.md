@@ -51,8 +51,8 @@ if download version is not fill you environment,you may try to compile it yourse
   -w, --workers=    concurrency (1)
   -b  --bulk_size 	bulk size in MB" default:5
   -v  --log 	    setting log level,options:trace,debug,info,warn,error
-  -o  --dump_filepath dump to source index to local path
-  -r  --dump_without_metadata don't include the metadata in the the dumpfile  default: false
+  -i  --input_file  indexing from local dump file
+  -o  --output_file output documents of source index into local file
 
 ```
 
