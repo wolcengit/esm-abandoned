@@ -1,5 +1,5 @@
 language: go
-script: make dist-all-platform
+script: make clean dist-all-platform
 go:
 - 1.6
 deploy:
@@ -9,5 +9,5 @@ deploy:
   file: 'bin/*.tar.gz'
   file_glob: true
   on:
-    repo: medcl/elasticsearch-dump
+    repo: medcl/elasticsearch-migration
     tags: true
