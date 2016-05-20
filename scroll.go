@@ -39,11 +39,6 @@ func (s *Scroll) ProcessScrollResult(c *Config, bar *pb.ProgressBar){
 	// write all the docs into a channel
 	for _, docI := range s.Hits.Docs {
 		c.DocChan <- docI.(map[string]interface{})
-
-		//write to file channel
-		if(len(c.DumpInputFile)>0){
-			c.FileChan <- docI.(map[string]interface{})
-		}
 	}
 }
 

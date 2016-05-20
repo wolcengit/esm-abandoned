@@ -21,8 +21,10 @@ import "bytes"
 type ESAPI interface{
 	ClusterHealth() *ClusterHealth
 	Bulk(data *bytes.Buffer)
-	GetIndexSettings(copyAllIndexes bool,indexNames string)(string,*Indexes,error)
+	GetIndexSettings(indexNames string) (*Indexes, error)
+	CreateIndexes(idxs *Indexes) (error)
+	GetIndexMappings(copyAllIndexes bool,indexNames string)(string,int,*Indexes,error)
 	UpdateIndexSettings()
-	NewScroll(indexNames string,scrollTime string,docBufferCount int)(scroll *Scroll, err error)
+	NewScroll(indexNames string,scrollTime string,docBufferCount int)(*Scroll, error)
 	NextScroll(scrollTime string,scrollId string)(*Scroll,error)
 }

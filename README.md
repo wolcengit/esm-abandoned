@@ -21,8 +21,15 @@ copy index `src_index` from `192.168.1.x` to `192.168.1.y:9200` and save with `d
 
 support Basic-Auth
 ```
-./bin/esm -s http://localhost:9200/ -x "src_index" -y "dest_index-test"  -d http://localhost:9201 -n admin:111111
+./bin/esm -s http://localhost:9200/ -x "src_index" -y "dest_index"  -d http://localhost:9201 -n admin:111111
 ```
+
+copy settings and override shard size
+```
+./bin/esm -s http://localhost:9200/ -x "src_index" -y "dest_index"  -d http://localhost:9201 -m admin:111111 -c 10000 --shards=50  --copy_settings 
+
+```
+
 
 ## Download
 https://github.com/medcl/elasticsearch-dump/releases
@@ -45,6 +52,7 @@ if download version is not fill you environment,you may try to compile it yourse
   -c, --count=      number of documents at a time: ie "size" in the scroll request (10000)
   -t, --time=       scroll time (1m)
       --shards=     set a number of shards on newly created indexes
+      --copy_settings copy index settings/mappings from source
   -x, --src_indexes=    list of indexes to copy, comma separated (_all), support wildcard match(*)
   -y, --dest_index=    indexes name to save, allow only one indexname, original indexname will be used if not specified
   -a, --all         copy indexes starting with . and _ (false)

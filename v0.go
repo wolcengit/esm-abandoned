@@ -86,17 +86,64 @@ func (s *ESAPIV0) Bulk(data *bytes.Buffer){
 	}
 }
 
-func (s *ESAPIV0) GetIndexSettings(copyAllIndexes bool,indexNames string)(string,*Indexes,error){
-	url:=fmt.Sprintf("%s/%s/_mapping", s.Host, indexNames)
+func (s *ESAPIV0) GetIndexSettings(indexNames string) (*Indexes, error) {
+
+	// get all settings
+	allSettings := &Indexes{}
+
+	url:=fmt.Sprintf("%s/%s/_settings", s.Host,indexNames)
 	resp,body, errs := Get(url,s.Auth)
 	if errs != nil {
-		log.Error(errs)
-		return "",nil,errs[0]
+		return nil,errs[0]
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return "",nil,errors.New(body)
+		return nil,errors.New(body)
+	}
+
+	log.Debug(body)
+
+	err := json.Unmarshal([]byte(body),allSettings)
+	if(err!=nil){
+		return nil,err
+	}
+
+	//for name, index := range *idxs {
+	//	//TODO 验证 analyzer等setting是否生效
+	//	if settings, ok := allSettings[name]; !ok {
+	//		return log.Errorf("couldnt find index %s", name)
+	//	} else {
+	//		// omg XXX
+	//		index.(map[string]interface{})["settings"] = map[string]interface{}{}
+	//		var shards string
+	//		if _, ok := settings.(map[string]interface{})["settings"].(map[string]interface{})["index"]; ok {
+	//			// try the new style syntax first, which has an index object
+	//			shards = settings.(map[string]interface{})["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_shards"].(string)
+	//		} else {
+	//			// if not, could be running from old es, try the old style index.number_of_shards
+	//			shards = settings.(map[string]interface{})["settings"].(map[string]interface{})["index.number_of_shards"].(string)
+	//		}
+	//		index.(map[string]interface{})["settings"].(map[string]interface{})["index"] = map[string]interface{}{
+	//			"number_of_shards": shards,
+	//		}
+	//	}
+	//}
+
+	return allSettings,nil
+}
+
+func (s *ESAPIV0) GetIndexMappings(copyAllIndexes bool,indexNames string)(string,int,*Indexes,error){
+	url:=fmt.Sprintf("%s/%s/_mapping", s.Host, indexNames)
+	resp,body, errs := Get(url,s.Auth)
+	if errs != nil {
+		log.Error(errs)
+		return "",0,nil,errs[0]
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "",0,nil,errors.New(body)
 	}
 
 	idxs := Indexes{}
@@ -104,7 +151,7 @@ func (s *ESAPIV0) GetIndexSettings(copyAllIndexes bool,indexNames string)(string
 
 	if er != nil {
 		log.Error(body)
-		return "",nil,er
+		return "",0,nil,er
 	}
 
 	// remove indexes that start with . if user asked for it
@@ -146,8 +193,10 @@ func (s *ESAPIV0) GetIndexSettings(copyAllIndexes bool,indexNames string)(string
 
 	}
 
+	i:=0
 	// wrap in mappings if moving from super old es
 	for name, idx := range idxs {
+		i++
 		if _, ok := idx.(map[string]interface{})["mappings"]; !ok {
 			(idxs)[name] = map[string]interface{}{
 				"mappings": idx,
@@ -155,10 +204,59 @@ func (s *ESAPIV0) GetIndexSettings(copyAllIndexes bool,indexNames string)(string
 		}
 	}
 
-	return indexNames,&idxs,nil
+	return indexNames,i,&idxs,nil
 }
 
+
+
 func (s *ESAPIV0) UpdateIndexSettings(){}
+
+
+// CreateIndexes on remodeleted ES instance
+func (s *ESAPIV0) CreateIndexes(idxs *Indexes) (err error) {
+
+	for name, idx := range *idxs {
+		body := bytes.Buffer{}
+		enc := json.NewEncoder(&body)
+		enc.Encode(idx)
+
+		log.Debug("start create index: ",name)
+
+
+		url:=fmt.Sprintf("%s/%s", s.Host, name)
+		client := &http.Client{}
+		reqest, _ := http.NewRequest("POST", url, &body)
+		if(s.Auth!=nil){
+			reqest.SetBasicAuth(s.Auth.User,s.Auth.Pass)
+		}
+		resp,errs := client.Do(reqest)
+		if errs != nil {
+			log.Error(errs)
+			return errs
+		}
+
+		if resp.StatusCode != 200 {
+			b, _ := ioutil.ReadAll(resp.Body)
+			return errors.New("failed creating index: "+string(b))
+		}
+
+		respBody,err:=ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Error(err)
+			return err
+		}
+
+		log.Debug(name,string(respBody))
+
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		log.Info("created index: ", name)
+	}
+
+	return nil
+}
 
 func (s *ESAPIV0) NewScroll(indexNames string,scrollTime string,docBufferCount int)(scroll *Scroll, err error){
 
@@ -171,7 +269,7 @@ func (s *ESAPIV0) NewScroll(indexNames string,scrollTime string,docBufferCount i
 	}
 	defer resp.Body.Close()
 
-	log.Debug("new scroll,",body)
+	log.Trace("new scroll,",body)
 
 	if err != nil {
 		log.Error(err)

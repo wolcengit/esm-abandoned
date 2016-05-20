@@ -35,10 +35,19 @@ func (s *ESAPIV5) ClusterHealth() *ClusterHealth {
 func (s *ESAPIV5) Bulk(data *bytes.Buffer){
 	s.ESAPIV0.Bulk(data)
 }
-func (s *ESAPIV5) GetIndexSettings(copyAllIndexes bool,indexNames string)(string,*Indexes,error){
-	return s.ESAPIV0.GetIndexSettings(copyAllIndexes,indexNames)
+
+func (s *ESAPIV5) GetIndexSettings(indexNames string) (*Indexes,error){
+	return s.ESAPIV0.GetIndexSettings(indexNames)
 }
+func (s *ESAPIV5) GetIndexMappings(copyAllIndexes bool,indexNames string)(string,int,*Indexes,error){
+	return s.ESAPIV0.GetIndexMappings(copyAllIndexes,indexNames)
+}
+
 func (s *ESAPIV5) UpdateIndexSettings(){}
+
+func (s *ESAPIV5) CreateIndexes(idxs *Indexes) (err error) {
+	return s.ESAPIV0.CreateIndexes(idxs)
+}
 
 func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount int)(scroll *Scroll, err error){
 	url := fmt.Sprintf("%s/%s/_search?scroll=%s&size=%d", s.Host, indexNames, scrollTime,docBufferCount)
@@ -53,7 +62,7 @@ func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount i
 		return nil,errors.New(body)
 	}
 
-	log.Debug("new scroll,",body)
+	log.Trace("new scroll,",body)
 
 	if err != nil {
 		log.Error(err)
@@ -69,6 +78,7 @@ func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount i
 
 	return scroll,err
 }
+
 func (s *ESAPIV5) NextScroll(scrollTime string,scrollId string)(*Scroll,error)  {
 	id := bytes.NewBufferString(scrollId)
 

@@ -64,29 +64,27 @@ type ClusterHealth struct {
 }
 
 type Config struct {
-	FlushLock sync.Mutex
-	DocChan   chan map[string]interface{}
-	FileChan   chan map[string]interface{}
-	SrcESAPI  ESAPI
-	DescESAPI ESAPI
-	SrcAuth   *Auth
-	DescAuth  *Auth
+	FlushLock      sync.Mutex
+	DocChan        chan map[string]interface{}
+	SrcESAPI       ESAPI
+	DescESAPI      ESAPI
+	SrcAuth        *Auth
+	DescAuth       *Auth
 			 // config options
-	SrcEs             string `short:"s" long:"source"  description:"source elasticsearch instance" required:"true"`
-	SrcEsAuthStr         string `short:"m" long:"source_auth"  description:"basic auth of source elasticsearch instance, ie: user:pass"`
-	DescEsAuthStr        string `short:"n" long:"dest_auth"  description:"basic auth of target elasticsearch instance, ie: user:pass"`
-	DstEs             string `short:"d" long:"dest"    description:"destination elasticsearch instance" required:"true"`
-	DocBufferCount    int    `short:"c" long:"count"   description:"number of documents at a time: ie \"size\" in the scroll request" default:"10000"`
-	ScrollTime        string `short:"t" long:"time"    description:"scroll time" default:"1m"`
-	Destructive       bool   `short:"f" long:"force"   description:"delete destination index before copying"`
-	ShardsCount       int    `long:"shards"            description:"set a number of shards on newly created indexes"`
-	IndexDocsOnly     bool   `long:"index_docs_only"          description:"index documents only, do not try to recreate indexes" default:"true"`
+	SrcEs          string `short:"s" long:"source"  description:"source elasticsearch instance"`
+	DestEs         string `short:"d" long:"dest"    description:"destination elasticsearch instance"`
+	SrcEsAuthStr   string `short:"m" long:"source_auth"  description:"basic auth of source elasticsearch instance, ie: user:pass"`
+	DestEsAuthStr  string `short:"n" long:"dest_auth"  description:"basic auth of target elasticsearch instance, ie: user:pass"`
+	DocBufferCount int    `short:"c" long:"count"   description:"number of documents at a time: ie \"size\" in the scroll request" default:"10000"`
+	ScrollTime     string `short:"t" long:"time"    description:"scroll time" default:"1m"`
+	Destructive    bool   `short:"f" long:"force"   description:"delete destination index before copying"`
+	ShardsCount    int    `long:"shards"            description:"set a number of shards on newly created indexes"`
 	SrcIndexNames     string `short:"x" long:"src_indexes" description:"indexes name to copy,support regex and comma separated list" default:"_all"`
 	DestIndexName     string `short:"y" long:"dest_index" description:"indexes name to save, allow only one indexname, original indexname will be used if not specified" default:""`
 	CopyAllIndexes    bool   `short:"a" long:"all"     description:"copy indexes starting with . and _"`
 	Workers           int    `short:"w" long:"workers" description:"concurrency" default:"1"`
 	BulkSizeInMB      int    `short:"b" long:"bulk_size" description:"bulk size in MB" default:"5"`
-	CopyIndexSettings bool   `long:"copy_settings"          description:"copy index settings from source" default:"false"`
+	CopyIndexSettings bool   `long:"copy_settings"          description:"copy index settings/mappings from source" default:"false"`
 	WaitForGreen      bool   `long:"green"             description:"wait for both hosts cluster status to be green before dump. otherwise yellow is okay"`
 	LogLevel          string `short:"v" long:"log"            description:"setting log level,options:trace,debug,info,warn,error"  default:"INFO"`
 	DumpOutFile       string  `short:"o" long:"output_file"            description:"output documents of source index into local file" `
