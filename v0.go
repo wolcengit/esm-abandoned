@@ -203,7 +203,7 @@ func cleanSettings(settings map[string]interface{}) {
 
 func (s *ESAPIV0) UpdateIndexSettings(name string, settings map[string]interface{}) error {
 
-	log.Debug("start update index: ", name, settings)
+	log.Debug("update index: ", name, settings)
 	cleanSettings(settings)
 	url := fmt.Sprintf("%s/%s/_settings", s.Host, name)
 
@@ -289,7 +289,7 @@ func (s *ESAPIV0) CreateIndex(name string, settings map[string]interface{}) (err
 func (s *ESAPIV0) Refresh(name string) (err error) {
 
 
-	log.Debug("start refresh index: ", name)
+	log.Debug("refresh index: ", name)
 
 	url := fmt.Sprintf("%s/%s/_refresh", s.Host, name)
 
@@ -303,18 +303,25 @@ func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount
 	// curl -XGET 'http://es-0.9:9200/_search?search_type=scan&scroll=10m&size=50'
 	url := fmt.Sprintf("%s/%s/_search?search_type=scan&scroll=%s&size=%d", s.Host, indexNames, scrollTime, docBufferCount)
 
-	queryBody:=map[string]interface{}{}
-	queryBody["query"]=map[string]interface{}{}
-	queryBody["query"].(map[string]interface{})["query_string"]=map[string]interface{}{}
-	queryBody["query"].(map[string]interface{})["query_string"].(map[string]interface{})["query"]=query
+	jsonBody:=""
+	if(len(query)>0) {
+		queryBody := map[string]interface{}{}
+		queryBody["query"] = map[string]interface{}{}
+		queryBody["query"].(map[string]interface{})["query_string"] = map[string]interface{}{}
+		queryBody["query"].(map[string]interface{})["query_string"].(map[string]interface{})["query"] = query
 
-	jsonBody,err:=json.Marshal(queryBody)
-	if(err!=nil){
-		log.Error(err)
-		return
+		jsonArray, err := json.Marshal(queryBody)
+		if (err != nil) {
+			log.Error(err)
+
+		}else{
+			jsonBody=string(jsonArray)
+		}
 	}
 
-	resp, body, errs := Post(url, s.Auth,string(jsonBody))
+	resp, body, errs := Post(url, s.Auth,jsonBody)
+
+
 
 	if err != nil {
 		log.Error(errs)

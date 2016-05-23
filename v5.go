@@ -66,17 +66,24 @@ func (s *ESAPIV5) Refresh(name string) (err error) {
 func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount int,query string)(scroll *Scroll, err error){
 	url := fmt.Sprintf("%s/%s/_search?scroll=%s&size=%d", s.Host, indexNames, scrollTime,docBufferCount)
 
-	queryBody:=map[string]interface{}{}
-	queryBody["query"]=map[string]interface{}{}
-	queryBody["query"].(map[string]interface{})["query_string"]=map[string]interface{}{}
-	queryBody["query"].(map[string]interface{})["query_string"].(map[string]interface{})["query"]=query
+	jsonBody:=""
+	if(len(query)>0) {
+		queryBody := map[string]interface{}{}
+		queryBody["query"] = map[string]interface{}{}
+		queryBody["query"].(map[string]interface{})["query_string"] = map[string]interface{}{}
+		queryBody["query"].(map[string]interface{})["query_string"].(map[string]interface{})["query"] = query
 
-	jsonBody,err:=json.Marshal(queryBody)
-	if(err!=nil){
-		log.Error(err)
-		return
+		jsonArray, err := json.Marshal(queryBody)
+		if (err != nil) {
+			log.Error(err)
+
+		}else{
+			jsonBody=string(jsonArray)
+		}
 	}
-	resp, body, errs := Post(url, s.Auth,string(jsonBody))
+
+	resp, body, errs := Post(url, s.Auth,jsonBody)
+
 	if errs != nil {
 		log.Error(errs)
 		return nil,errs[0]

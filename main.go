@@ -55,6 +55,7 @@ func main() {
 		auth:=Auth{User:authArray[0],Pass:authArray[1]}
 		c.SourceAuth =&auth
 	}
+
 	if(len(c.TargetEsAuthStr)>0&&strings.Contains(c.TargetEsAuthStr,":")){
 		authArray:=strings.Split(c.TargetEsAuthStr,":")
 		auth:=Auth{User:authArray[0],Pass:authArray[1]}
@@ -81,26 +82,28 @@ func main() {
 		c.SourceESAPI = api
 	}
 
-	//get target es version
-	descESVersion, errs := c.ClusterVersion(c.TargetEs,c.TargetAuth)
-	if errs != nil {
-		return
-	}
+	if(len(c.TargetEs)>0){
+		//get target es version
+		descESVersion, errs := c.ClusterVersion(c.TargetEs,c.TargetAuth)
+		if errs != nil {
+			return
+		}
 
-	if strings.HasPrefix(descESVersion.Version.Number,"5.") {
-		log.Debug("target es is V5,",descESVersion.Version.Number)
-		api:=new(ESAPIV5)
-		api.Host=c.TargetEs
-		api.Auth=c.TargetAuth
-		c.TargetESAPI = api
-	} else {
-		log.Debug("target es is not V5,",descESVersion.Version.Number)
-		api:=new(ESAPIV0)
-		api.Host=c.TargetEs
-		api.Auth=c.TargetAuth
-		c.TargetESAPI = api
+		if strings.HasPrefix(descESVersion.Version.Number,"5.") {
+			log.Debug("target es is V5,",descESVersion.Version.Number)
+			api:=new(ESAPIV5)
+			api.Host=c.TargetEs
+			api.Auth=c.TargetAuth
+			c.TargetESAPI = api
+		} else {
+			log.Debug("target es is not V5,",descESVersion.Version.Number)
+			api:=new(ESAPIV0)
+			api.Host=c.TargetEs
+			api.Auth=c.TargetAuth
+			c.TargetESAPI = api
 
-	}
+		}
+
 
 	// wait for cluster state to be okay before moving
 	timer := time.NewTimer(time.Second * 3)
@@ -267,6 +270,8 @@ func main() {
 		return
 	}
 
+		defer c.recoveryIndexSettings(sourceIndexRefreshSettings)
+	}
 
 	log.Info("start data migration..")
 
@@ -284,28 +289,27 @@ func main() {
 		}
 		// create a progressbar and start a docCount
 		fetchBar := pb.New(scroll.Hits.Total).Prefix("Pull ")
-		bulkBar := pb.New(scroll.Hits.Total).Prefix("Push ")
+		outputBar := pb.New(scroll.Hits.Total).Prefix("Push ")
 
 
 		// start pool
-		pool, err := pb.StartPool(fetchBar, bulkBar)
+		pool, err := pb.StartPool(fetchBar, outputBar)
 		if err != nil {
 			panic(err)
 		}
 
-		// update bars
-		var docCount int
 		wg := sync.WaitGroup{}
-		wg.Add(c.Workers)
-		for i := 0; i < c.Workers; i++ {
-			go c.NewBulkWorker(&docCount, bulkBar, &wg)
-		}
-
-		// start file write
-		if(len(c.DumpOutFile)>0){
-			go func() {
-
-			}()
+		//start es bulk thread
+		if(len(c.TargetEs)>0){
+			var docCount int
+			wg.Add(c.Workers)
+			for i := 0; i < c.Workers; i++ {
+				go c.NewBulkWorker(&docCount, outputBar, &wg)
+			}
+		}else  if(len(c.DumpOutFile)>0){
+			// start file write
+			wg.Add(1)
+			go c.NewFileDumpWorker(outputBar,&wg)
 		}
 
 		scroll.ProcessScrollResult(&c,fetchBar)
@@ -318,14 +322,18 @@ func main() {
 		// finished, close doc chan and wait for goroutines to be done
 		close(c.DocChan)
 		wg.Wait()
-		bulkBar.Finish()
+		outputBar.Finish()
 		// close pool
 		pool.Stop()
 	}
 
 	log.Info("data migration finished.")
 
-	//TODO update replica and refresh_interval
+
+}
+
+func (c *Config)recoveryIndexSettings(sourceIndexRefreshSettings map[string]interface{})  {
+	//update replica and refresh_interval
 	for name,interval  := range  sourceIndexRefreshSettings{
 		tempIndexSettings:=getEmptyIndexSettings()
 		tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["refresh_interval"] = interval

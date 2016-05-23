@@ -114,4 +114,3 @@ func (c *Config) NewBulkWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitG
 	bulkItemSize = 0
 	wg.Done()
 }
-

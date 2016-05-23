@@ -36,7 +36,10 @@ copy settings and mapping, recreate target index, add query to source fetch, ref
 
 ```
 
-
+dump elasticsearch documents into local file
+```
+./bin/esm -s http://localhost:9200 -x "src_index"  -m admin:111111 -c 5000 -b -q=query:mixer  --refresh -o=dump.bin 
+```
 
 
 ## Download

@@ -19,8 +19,86 @@ package main
 import (
 	"sync"
 	"gopkg.in/cheggaaa/pb.v1"
+	log "github.com/cihub/seelog"
+	"os"
+	"bufio"
+	"encoding/json"
 )
 
-func (c *Config) DumpFile(pb *pb.ProgressBar,wg *sync.WaitGroup)  {
-
+func checkFileIsExist(filename string) (bool) {
+	var exist = true;
+	if _, err := os.Stat(filename); os.IsNotExist(err) {
+		exist = false;
+	}
+	return exist;
 }
+
+func (c *Config) NewFileDumpWorker(pb *pb.ProgressBar, wg *sync.WaitGroup) {
+	var f *os.File
+	var err1   error;
+
+	if checkFileIsExist(c.DumpOutFile) {
+		f, err1 = os.OpenFile(c.DumpOutFile, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+		if(err1!=nil){
+			log.Error(err1)
+			return
+		}
+
+	}else {
+		f, err1 = os.Create(c.DumpOutFile)
+		if(err1!=nil){
+			log.Error(err1)
+			return
+		}
+	}
+
+	w := bufio.NewWriter(f)
+
+	READ_DOCS:
+	for {
+		docI, open := <-c.DocChan
+
+		// this check is in case the document is an error with scroll stuff
+		if status, ok := docI["status"]; ok {
+			if status.(int) == 404 {
+				log.Error("error: ", docI["response"])
+				continue
+			}
+		}
+
+		// sanity check
+		for _, key := range []string{"_index", "_type", "_source", "_id"} {
+			if _, ok := docI[key]; !ok {
+				//json,_:=json.Marshal(docI)
+				//log.Errorf("failed parsing document: %v", string(json))
+				break READ_DOCS
+			}
+		}
+
+		jsr,err:=json.Marshal(docI)
+		log.Debug(string(jsr))
+		if(err!=nil){
+			log.Error(err)
+		}
+		n,err:=w.WriteString(string(jsr))
+		if(err!=nil){
+			log.Error(n,err)
+		}
+		w.WriteString("\n")
+		pb.Increment()
+
+		// if channel is closed flush and gtfo
+		if !open {
+			goto WORKER_DONE
+		}
+	}
+
+	WORKER_DONE:
+	w.Flush()
+	f.Close()
+
+	wg.Done()
+	log.Debug("file dump finished")
+}
+
+
