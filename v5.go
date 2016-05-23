@@ -55,6 +55,11 @@ func (s *ESAPIV5) CreateIndex(name string,settings map[string]interface{}) (err 
 	return s.ESAPIV0.CreateIndex(name,settings)
 }
 
+func (s *ESAPIV5) UpdateIndexMapping(indexName string,settings map[string]interface{}) error {
+	return s.ESAPIV0.UpdateIndexMapping(indexName,settings)
+}
+
+
 func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount int)(scroll *Scroll, err error){
 	url := fmt.Sprintf("%s/%s/_search?scroll=%s&size=%d", s.Host, indexNames, scrollTime,docBufferCount)
 	resp,body, errs := Get(url,s.Auth)

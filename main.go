@@ -40,6 +40,10 @@ func main() {
 		return
 	}
 
+	if(c.SourceEs==c.TargetEs&&c.SourceIndexNames==c.TargetIndexName){
+		log.Error("migration output is the same as the output")
+		return
+	}
 
 	// enough of a buffer to hold all the search results across all workers
 	c.DocChan = make(chan map[string]interface{}, c.DocBufferCount*c.Workers*10)
@@ -119,7 +123,7 @@ func main() {
 
 
 	// get all indexes from source
-	indexNames,indexCount, srcIndexMappings,err := c.SourceESAPI.GetIndexMappings(c.CopyAllIndexes,c.SourceIndexNames);
+	indexNames,indexCount, sourceIndexMappings,err := c.SourceESAPI.GetIndexMappings(c.CopyAllIndexes,c.SourceIndexNames);
 	if(err!=nil){
 		log.Error(err)
 		return
@@ -222,10 +226,34 @@ func main() {
 					if err != nil {
 						log.Error(err)
 					}
+
+
 				}
 
-				//TODO c.CreateMappings(srcIndexMappings)
-				log.Debug(srcIndexMappings)
+
+			}
+
+			if(c.CopyIndexMappings){
+				log.Debug("start process with mappings")
+				if(descESVersion.Version.Number[0]!=srcESVersion.Version.Number[0]){
+					log.Error(srcESVersion.Version,"=>",descESVersion.Version,",cross-big-version mapping migration not avaiable, please update mapping manually :(")
+					return
+				}
+
+				//if there is only one index and we specify the dest indexname
+				if((c.SourceIndexNames !=c.TargetIndexName)&&(indexCount==1||(len(c.TargetIndexName)>0))){
+					log.Debug("only one index,so we can rewrite indexname")
+					(*sourceIndexMappings)[c.TargetIndexName]=(*sourceIndexMappings)[c.SourceIndexNames]
+					delete(*sourceIndexMappings,c.SourceIndexNames)
+					log.Debug(sourceIndexMappings)
+				}
+
+				for name, mapping := range *sourceIndexMappings {
+					err:=c.TargetESAPI.UpdateIndexMapping(name,mapping.(map[string]interface{})["mappings"].(map[string]interface{}))
+					if(err!=nil){
+						log.Error(err)
+					}
+				}
 			}
 
 			log.Info("settings/mappings migration finished.")
@@ -233,7 +261,7 @@ func main() {
 
 
 	}else{
-		log.Error("Index not exists,",c.SourceIndexNames)
+		log.Error("index not exists,",c.SourceIndexNames)
 		return
 	}
 
@@ -248,6 +276,10 @@ func main() {
 	}
 
 	if scroll != nil && scroll.Hits.Docs != nil {
+		if(scroll.Hits.Total==0){
+			log.Error("can't find documents from source.")
+			return
+		}
 		// create a progressbar and start a docCount
 		fetchBar := pb.New(scroll.Hits.Total).Prefix("Pull ")
 		bulkBar := pb.New(scroll.Hits.Total).Prefix("Push ")

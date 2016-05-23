@@ -236,6 +236,27 @@ func (s *ESAPIV0) UpdateIndexSettings(name string, settings map[string]interface
 	return err
 }
 
+func (s *ESAPIV0) UpdateIndexMapping(indexName string, settings map[string]interface{}) error {
+
+	log.Debug("start update mapping: ", indexName,settings)
+
+	for name, mapping := range settings {
+
+		log.Debug("start update mapping: ", indexName,name,mapping)
+
+		url := fmt.Sprintf("%s/%s/%s/_mapping", s.Host, indexName, name)
+
+		body := bytes.Buffer{}
+		enc := json.NewEncoder(&body)
+		enc.Encode(mapping)
+		res, err := Request("POST", url, s.Auth, &body)
+		if(err!=nil){
+			log.Error(err,res)
+		}
+	}
+	return nil
+}
+
 func (s *ESAPIV0) DeleteIndex(name string) (err error) {
 
 	log.Debug("start delete index: ", name)
@@ -324,3 +345,5 @@ func (s *ESAPIV0) NextScroll(scrollTime string, scrollId string) (*Scroll, error
 
 	return scroll, nil
 }
+
+

@@ -82,7 +82,8 @@ type Config struct {
 	ScrollTime        string `short:"t" long:"time"    description:"scroll time" default:"1m"`
 	RecreateIndex     bool      `short:"f" long:"force"   description:"delete destination index before copying" default:"false"`
 	CopyAllIndexes    bool   `short:"a" long:"all"     description:"copy indexes starting with . and _"`
-	CopyIndexSettings bool   `long:"copy_settings"          description:"copy index settings/mappings from source" default:"false"`
+	CopyIndexSettings bool   `long:"copy_settings"          description:"copy index settings from source" default:"false"`
+	CopyIndexMappings bool   `long:"copy_mappings"          description:"copy index mappings from source" default:"false"`
 	ShardsCount       int    `long:"shards"            description:"set a number of shards on newly created indexes"`
 	SourceIndexNames  string `short:"x" long:"src_indexes" description:"indexes name to copy,support regex and comma separated list" default:"_all"`
 	TargetIndexName   string `short:"y" long:"dest_index" description:"indexes name to save, allow only one indexname, original indexname will be used if not specified" default:""`

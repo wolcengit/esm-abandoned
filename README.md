@@ -52,7 +52,8 @@ if download version is not fill you environment,you may try to compile it yourse
   -c, --count=      number of documents at a time: ie "size" in the scroll request (10000)
   -t, --time=       scroll time (1m)
       --shards=     set a number of shards on newly created indexes
-      --copy_settings copy index settings/mappings from source
+      --copy_settings copy index settings from source
+      --copy_mappings copy mappings mappings from source
   -f, --force      delete destination index before copying, default:false
   -x, --src_indexes=    list of indexes to copy, comma separated (_all), support wildcard match(*)
   -y, --dest_index=    indexes name to save, allow only one indexname, original indexname will be used if not specified
