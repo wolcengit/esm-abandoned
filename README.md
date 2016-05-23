@@ -30,6 +30,12 @@ copy settings and override shard size
 
 ```
 
+copy settings and mapping, recreate target index 
+```
+./bin/esm -s http://localhost:9200/ -x "src_index" -y "dest_index"  -d http://localhost:9201  -c 10000 --shards=5  --copy_settings --copy_mapping --force
+
+```
+
 
 ## Download
 https://github.com/medcl/elasticsearch-dump/releases
