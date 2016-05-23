@@ -78,7 +78,7 @@ func (s *ESAPIV0) Bulk(data *bytes.Buffer) {
 		log.Error(err)
 		return
 	}
-
+	log.Trace(url,string(body))
 	defer resp.Body.Close()
 	defer data.Reset()
 	if resp.StatusCode != 200 {
@@ -187,7 +187,7 @@ func (s *ESAPIV0) GetIndexMappings(copyAllIndexes bool, indexNames string) (stri
 	return indexNames, i, &idxs, nil
 }
 
-func getIndexEmptySettings() map[string]interface{} {
+func getEmptyIndexSettings() map[string]interface{} {
 	tempIndexSettings := map[string]interface{}{}
 	tempIndexSettings["settings"] = map[string]interface{}{}
 	tempIndexSettings["settings"].(map[string]interface{})["index"] = map[string]interface{}{}
@@ -204,13 +204,13 @@ func cleanSettings(settings map[string]interface{}) {
 func (s *ESAPIV0) UpdateIndexSettings(name string, settings map[string]interface{}) error {
 
 	log.Debug("start update index: ", name, settings)
-
+	cleanSettings(settings)
 	url := fmt.Sprintf("%s/%s/_settings", s.Host, name)
 
 	if _, ok := settings["settings"].(map[string]interface{})["index"]; ok {
 		if set, ok := settings["settings"].(map[string]interface{})["index"].(map[string]interface{})["analysis"]; ok {
 			log.Debug("update static index settings: ", name)
-			staticIndexSettings := getIndexEmptySettings()
+			staticIndexSettings := getEmptyIndexSettings()
 			staticIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["analysis"] = set
 			Post(fmt.Sprintf("%s/%s/_close", s.Host, name), s.Auth, "")
 			body := bytes.Buffer{}
@@ -286,18 +286,43 @@ func (s *ESAPIV0) CreateIndex(name string, settings map[string]interface{}) (err
 	return err
 }
 
-func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount int) (scroll *Scroll, err error) {
+func (s *ESAPIV0) Refresh(name string) (err error) {
+
+
+	log.Debug("start refresh index: ", name)
+
+	url := fmt.Sprintf("%s/%s/_refresh", s.Host, name)
+
+	Post(url,s.Auth,"")
+
+	return nil
+}
+
+func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount int,query string) (scroll *Scroll, err error) {
 
 	// curl -XGET 'http://es-0.9:9200/_search?search_type=scan&scroll=10m&size=50'
 	url := fmt.Sprintf("%s/%s/_search?search_type=scan&scroll=%s&size=%d", s.Host, indexNames, scrollTime, docBufferCount)
-	resp, body, errs := Get(url, s.Auth)
+
+	queryBody:=map[string]interface{}{}
+	queryBody["query"]=map[string]interface{}{}
+	queryBody["query"].(map[string]interface{})["query_string"]=map[string]interface{}{}
+	queryBody["query"].(map[string]interface{})["query_string"].(map[string]interface{})["query"]=query
+
+	jsonBody,err:=json.Marshal(queryBody)
+	if(err!=nil){
+		log.Error(err)
+		return
+	}
+
+	resp, body, errs := Post(url, s.Auth,string(jsonBody))
+
 	if err != nil {
 		log.Error(errs)
 		return nil, errs[0]
 	}
 	defer resp.Body.Close()
 
-	log.Trace("new scroll,", body)
+	log.Trace("new scroll,",url, body)
 
 	if err != nil {
 		log.Error(err)
@@ -333,6 +358,8 @@ func (s *ESAPIV0) NextScroll(scrollTime string, scrollId string) (*Scroll, error
 	}
 
 	defer resp.Body.Close()
+
+	log.Trace("next scroll,",url,body)
 
 	// decode elasticsearch scroll response
 	scroll := &Scroll{}

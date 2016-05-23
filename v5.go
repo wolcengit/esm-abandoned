@@ -59,10 +59,24 @@ func (s *ESAPIV5) UpdateIndexMapping(indexName string,settings map[string]interf
 	return s.ESAPIV0.UpdateIndexMapping(indexName,settings)
 }
 
+func (s *ESAPIV5) Refresh(name string) (err error) {
+	return s.ESAPIV0.Refresh(name)
+}
 
-func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount int)(scroll *Scroll, err error){
+func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount int,query string)(scroll *Scroll, err error){
 	url := fmt.Sprintf("%s/%s/_search?scroll=%s&size=%d", s.Host, indexNames, scrollTime,docBufferCount)
-	resp,body, errs := Get(url,s.Auth)
+
+	queryBody:=map[string]interface{}{}
+	queryBody["query"]=map[string]interface{}{}
+	queryBody["query"].(map[string]interface{})["query_string"]=map[string]interface{}{}
+	queryBody["query"].(map[string]interface{})["query_string"].(map[string]interface{})["query"]=query
+
+	jsonBody,err:=json.Marshal(queryBody)
+	if(err!=nil){
+		log.Error(err)
+		return
+	}
+	resp, body, errs := Post(url, s.Auth,string(jsonBody))
 	if errs != nil {
 		log.Error(errs)
 		return nil,errs[0]

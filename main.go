@@ -129,6 +129,8 @@ func main() {
 		return
 	}
 
+	sourceIndexRefreshSettings:=map[string]interface{}{}
+
 	if(indexCount>0){
 		//override indexnames to be copy
 		c.SourceIndexNames =indexNames
@@ -166,8 +168,7 @@ func main() {
 			// dealing with indices settings
 			for name, idx := range *sourceIndexSettings {
 				log.Debug("dealing with index,name:",name,",settings:",idx)
-				tempIndexSettings:=map[string]interface{}{}
-				tempIndexSettings["settings"] = map[string]interface{}{}
+				tempIndexSettings:=getEmptyIndexSettings()
 
 				targetIndexExist:=false
 				//if target index settings is exist and we don't copy settings, we use target settings
@@ -198,6 +199,7 @@ func main() {
 					tempIndexSettings["settings"].(map[string]interface{})["index"] = map[string]interface{}{}
 				}
 
+				sourceIndexRefreshSettings[name]=((*sourceIndexSettings)[name].(map[string]interface{}))["settings"].(map[string]interface{})["index"].(map[string]interface{})["refresh_interval"]
 
 				//set refresh_interval
 				tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["refresh_interval"] = -1
@@ -269,7 +271,7 @@ func main() {
 	log.Info("start data migration..")
 
 	// start scroll
-	scroll, err := c.SourceESAPI.NewScroll(c.SourceIndexNames,c.ScrollTime,c.DocBufferCount)
+	scroll, err := c.SourceESAPI.NewScroll(c.SourceIndexNames,c.ScrollTime,c.DocBufferCount,c.Query)
 	if err != nil {
 		log.Error(err)
 		return
@@ -324,7 +326,15 @@ func main() {
 	log.Info("data migration finished.")
 
 	//TODO update replica and refresh_interval
-
+	for name,interval  := range  sourceIndexRefreshSettings{
+		tempIndexSettings:=getEmptyIndexSettings()
+		tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["refresh_interval"] = interval
+		//tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_replicas"] = 0
+		c.TargetESAPI.UpdateIndexSettings(name,tempIndexSettings)
+		if(c.Refresh){
+			c.TargetESAPI.Refresh(name)
+		}
+	}
 }
 
 func (c *Config) ClusterVersion(host string,auth *Auth) (*ClusterVersion, []error) {

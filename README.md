@@ -5,7 +5,7 @@ Support cross version and http basic auth.
 [![asciicast](https://asciinema.org/a/e562wy1ro30yboznkj5f539md.png)](https://asciinema.org/a/e562wy1ro30yboznkj5f539md)
 
 
-## EXAMPLE:
+## Example:
 
 copy index `index_name` from `192.168.1.x` to `192.168.1.y:9200`
 
@@ -30,11 +30,13 @@ copy settings and override shard size
 
 ```
 
-copy settings and mapping, recreate target index 
+copy settings and mapping, recreate target index, add query to source fetch, refresh after migration
 ```
-./bin/esm -s http://localhost:9200/ -x "src_index" -y "dest_index"  -d http://localhost:9201  -c 10000 --shards=5  --copy_settings --copy_mapping --force
+./bin/esm -s http://localhost:9200/ -x "src_index" -q=query:phone -y "dest_index"  -d http://localhost:9201  -c 10000 --shards=5  --copy_settings --copy_mapping --force  --refresh
 
 ```
+
+
 
 
 ## Download
@@ -53,6 +55,7 @@ if download version is not fill you environment,you may try to compile it yourse
 ```
   -s, --source=     source elasticsearch instance
   -d, --dest=       destination elasticsearch instance
+  -q, --query=      query against source elasticsearch instance, filter data before migrate, ie: name:medcl
   -m, --source_auth basic auth of source elasticsearch instance, ie: user:pass
   -n, --dest_auth   basic auth of target elasticsearch instance, ie: user:pass
   -c, --count=      number of documents at a time: ie "size" in the scroll request (10000)
@@ -69,6 +72,7 @@ if download version is not fill you environment,you may try to compile it yourse
   -v  --log 	    setting log level,options:trace,debug,info,warn,error
   -i  --input_file  indexing from local dump file
   -o  --output_file output documents of source index into local file
+  --refresh     refresh after migration finished
 
 ```
 
