@@ -53,6 +53,7 @@ if download version is not fill you environment,you may try to compile it yourse
   -t, --time=       scroll time (1m)
       --shards=     set a number of shards on newly created indexes
       --copy_settings copy index settings/mappings from source
+  -f, --force      delete destination index before copying, default:false
   -x, --src_indexes=    list of indexes to copy, comma separated (_all), support wildcard match(*)
   -y, --dest_index=    indexes name to save, allow only one indexname, original indexname will be used if not specified
   -a, --all         copy indexes starting with . and _ (false)
