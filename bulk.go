@@ -26,6 +26,8 @@ import (
 
 func (c *Config) NewBulkWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitGroup) {
 
+	log.Debug("start es bulk worker")
+
 	bulkItemSize := 0
 	mainBuf := bytes.Buffer{}
 	docBuf := bytes.Buffer{}
@@ -35,7 +37,7 @@ func (c *Config) NewBulkWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitG
 	for {
 		var err error
 		docI, open := <-c.DocChan
-
+		log.Debug("read doc from channel,",docI)
 		// this check is in case the document is an error with scroll stuff
 		if status, ok := docI["status"]; ok {
 			if status.(int) == 404 {
@@ -92,6 +94,7 @@ func (c *Config) NewBulkWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitG
 		// if we approach the 100mb es limit, flush to es and reset mainBuf
 		if mainBuf.Len()+docBuf.Len() > (c.BulkSizeInMB * 1000000) {
 			c.TargetESAPI.Bulk(&mainBuf)
+			log.Trace("bulk insert")
 			pb.Add(bulkItemSize)
 			bulkItemSize = 0
 		}
@@ -110,6 +113,7 @@ func (c *Config) NewBulkWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitG
 		bulkItemSize++
 	}
 	c.TargetESAPI.Bulk(&mainBuf)
+	log.Trace("bulk insert")
 	pb.Add(bulkItemSize)
 	bulkItemSize = 0
 	wg.Done()

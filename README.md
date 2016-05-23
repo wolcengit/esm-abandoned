@@ -41,6 +41,10 @@ dump elasticsearch documents into local file
 ./bin/esm -s http://localhost:9200 -x "src_index"  -m admin:111111 -c 5000 -b -q=query:mixer  --refresh -o=dump.bin 
 ```
 
+loading data from dump files, bulk insert to another es instance
+```
+./bin/esm -d http://localhost:9200 -y "dest_index"   -n admin:111111 -c 5000 -b 5 --refresh -i=dump.bin
+```
 
 ## Download
 https://github.com/medcl/elasticsearch-dump/releases

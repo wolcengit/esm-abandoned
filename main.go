@@ -8,9 +8,11 @@ import (
 	"sync"
 	"time"
 
+	"bufio"
 	log "github.com/cihub/seelog"
 	goflags "github.com/jessevdk/go-flags"
 	pb "gopkg.in/cheggaaa/pb.v1"
+	"os"
 )
 
 func main() {
@@ -30,17 +32,16 @@ func main() {
 
 	setInitLogging(c.LogLevel)
 
-
-	if(len(c.SourceEs)==0&&len(c.DumpInputFile)==0){
+	if len(c.SourceEs) == 0 && len(c.DumpInputFile) == 0 {
 		log.Error("no input, type --help for more details")
 		return
 	}
-	if(len(c.TargetEs)==0&&len(c.DumpOutFile)==0){
+	if len(c.TargetEs) == 0 && len(c.DumpOutFile) == 0 {
 		log.Error("no output, type --help for more details")
 		return
 	}
 
-	if(c.SourceEs==c.TargetEs&&c.SourceIndexNames==c.TargetIndexName){
+	if c.SourceEs == c.TargetEs && c.SourceIndexNames == c.TargetIndexName {
 		log.Error("migration output is the same as the output")
 		return
 	}
@@ -48,310 +49,362 @@ func main() {
 	// enough of a buffer to hold all the search results across all workers
 	c.DocChan = make(chan map[string]interface{}, c.DocBufferCount*c.Workers*10)
 
+	var srcESVersion *ClusterVersion
+	// create a progressbar and start a docCount
+	var fetchBar, outputBar *pb.ProgressBar
 
-	//dealing with basic auth
-	if(len(c.SourceEsAuthStr)>0&&strings.Contains(c.SourceEsAuthStr,":")){
-		authArray:=strings.Split(c.SourceEsAuthStr,":")
-		auth:=Auth{User:authArray[0],Pass:authArray[1]}
-		c.SourceAuth =&auth
+	wg := sync.WaitGroup{}
+
+	//dealing with input
+	if len(c.SourceEs) > 0 {
+		//dealing with basic auth
+		if len(c.SourceEsAuthStr) > 0 && strings.Contains(c.SourceEsAuthStr, ":") {
+			authArray := strings.Split(c.SourceEsAuthStr, ":")
+			auth := Auth{User: authArray[0], Pass: authArray[1]}
+			c.SourceAuth = &auth
+		}
+
+		//get source es version
+		srcESVersion, errs := c.ClusterVersion(c.SourceEs, c.SourceAuth)
+		if errs != nil {
+			return
+		}
+		if strings.HasPrefix(srcESVersion.Version.Number, "5.") {
+			log.Debug("source es is V5,", srcESVersion.Version.Number)
+			api := new(ESAPIV5)
+			api.Host = c.SourceEs
+			api.Auth = c.SourceAuth
+			c.SourceESAPI = api
+		} else {
+			log.Debug("source es is not V5,", srcESVersion.Version.Number)
+			api := new(ESAPIV0)
+			api.Host = c.SourceEs
+			api.Auth = c.SourceAuth
+			c.SourceESAPI = api
+		}
+
+		scroll, err := c.SourceESAPI.NewScroll(c.SourceIndexNames, c.ScrollTime, c.DocBufferCount, c.Query)
+		if err != nil {
+			log.Error(err)
+			return
+		}
+		if scroll != nil && scroll.Hits.Docs != nil {
+
+			if scroll.Hits.Total == 0 {
+				log.Error("can't find documents from source.")
+				return
+			}
+
+			fetchBar = pb.New(scroll.Hits.Total).Prefix("Scroll ")
+			outputBar = pb.New(scroll.Hits.Total).Prefix("Bulk ")
+		}
+
+		go func() {
+			wg.Add(1)
+			//process input
+			// start scroll
+			scroll.ProcessScrollResult(&c, fetchBar)
+
+			// loop scrolling until done
+			for scroll.Next(&c, fetchBar) == false {
+			}
+			fetchBar.Finish()
+			// finished, close doc chan and wait for goroutines to be done
+			wg.Done()
+			close(c.DocChan)
+		}()
+	} else if len(c.DumpInputFile) > 0 {
+		log.Debug("start reading file")
+		//read file stream
+		wg.Add(1)
+		f, err := os.Open(c.DumpInputFile)
+		if err != nil {
+			log.Error(err)
+			return
+		}
+		//get file lines
+		fileScanner := bufio.NewScanner(f)
+		lineCount := 0
+		for fileScanner.Scan() {
+			lineCount++
+		}
+		log.Trace("file line,", lineCount)
+		fetchBar = pb.New(lineCount).Prefix("Read ")
+		outputBar = pb.New(lineCount).Prefix("Bulk ")
+		f.Close()
+		f, err = os.Open(c.DumpInputFile)
+		if err != nil {
+			log.Error(err)
+			return
+		}
+		scanner := bufio.NewScanner(f)
+		scanner.Split(bufio.ScanLines)
+		for scanner.Scan() {
+			js := map[string]interface{}{}
+			line := scanner.Text()
+			log.Trace("reading file,", line)
+			err = json.Unmarshal([]byte(line), &js)
+			c.DocChan <- js
+			fetchBar.Increment()
+		}
+		defer f.Close()
+		wg.Done()
+		close(c.DocChan)
+		log.Debug("end reading file")
 	}
 
-	if(len(c.TargetEsAuthStr)>0&&strings.Contains(c.TargetEsAuthStr,":")){
-		authArray:=strings.Split(c.TargetEsAuthStr,":")
-		auth:=Auth{User:authArray[0],Pass:authArray[1]}
-		c.TargetAuth =&auth
+	// start pool
+	pool, err := pb.StartPool(fetchBar, outputBar)
+	if err != nil {
+		panic(err)
 	}
 
-	//get source es version
-	srcESVersion, errs := c.ClusterVersion(c.SourceEs,c.SourceAuth)
-	if errs != nil {
-		return
-	}
+	//dealing with output
+	if len(c.TargetEs) > 0 {
+		if len(c.TargetEsAuthStr) > 0 && strings.Contains(c.TargetEsAuthStr, ":") {
+			authArray := strings.Split(c.TargetEsAuthStr, ":")
+			auth := Auth{User: authArray[0], Pass: authArray[1]}
+			c.TargetAuth = &auth
+		}
 
-	if strings.HasPrefix(srcESVersion.Version.Number,"5.") {
-		log.Debug("source es is V5,",srcESVersion.Version.Number)
-		api:=new(ESAPIV5)
-		api.Host=c.SourceEs
-		api.Auth=c.SourceAuth
-		c.SourceESAPI = api
-	} else {
-		log.Debug("source es is not V5,",srcESVersion.Version.Number)
-		api:=new(ESAPIV0)
-		api.Host=c.SourceEs
-		api.Auth=c.SourceAuth
-		c.SourceESAPI = api
-	}
-
-	if(len(c.TargetEs)>0){
 		//get target es version
-		descESVersion, errs := c.ClusterVersion(c.TargetEs,c.TargetAuth)
+		descESVersion, errs := c.ClusterVersion(c.TargetEs, c.TargetAuth)
 		if errs != nil {
 			return
 		}
 
-		if strings.HasPrefix(descESVersion.Version.Number,"5.") {
-			log.Debug("target es is V5,",descESVersion.Version.Number)
-			api:=new(ESAPIV5)
-			api.Host=c.TargetEs
-			api.Auth=c.TargetAuth
+		if strings.HasPrefix(descESVersion.Version.Number, "5.") {
+			log.Debug("target es is V5,", descESVersion.Version.Number)
+			api := new(ESAPIV5)
+			api.Host = c.TargetEs
+			api.Auth = c.TargetAuth
 			c.TargetESAPI = api
 		} else {
-			log.Debug("target es is not V5,",descESVersion.Version.Number)
-			api:=new(ESAPIV0)
-			api.Host=c.TargetEs
-			api.Auth=c.TargetAuth
+			log.Debug("target es is not V5,", descESVersion.Version.Number)
+			api := new(ESAPIV0)
+			api.Host = c.TargetEs
+			api.Auth = c.TargetAuth
 			c.TargetESAPI = api
 
 		}
 
-
-	// wait for cluster state to be okay before moving
-	timer := time.NewTimer(time.Second * 3)
-
-	for {
-		if status, ready := c.ClusterReady(c.SourceESAPI); !ready {
-			log.Infof("%s at %s is %s, delaying migration ", status.Name, c.SourceEs, status.Status)
-			<-timer.C
-			continue
-		}
-		if status, ready := c.ClusterReady(c.TargetESAPI); !ready {
-			log.Infof("%s at %s is %s, delaying migration ", status.Name, c.TargetEs, status.Status)
-			<-timer.C
-			continue
+		log.Debug("start process with mappings")
+		if srcESVersion != nil && c.CopyIndexMappings && descESVersion.Version.Number[0] != srcESVersion.Version.Number[0] {
+			log.Error(srcESVersion.Version, "=>", descESVersion.Version, ",cross-big-version mapping migration not avaiable, please update mapping manually :(")
+			return
 		}
 
-		timer.Stop()
-		break
-	}
+		// wait for cluster state to be okay before moving
+		timer := time.NewTimer(time.Second * 3)
 
+		for {
+			if len(c.SourceEs) > 0 {
+				if status, ready := c.ClusterReady(c.SourceESAPI); !ready {
+					log.Infof("%s at %s is %s, delaying migration ", status.Name, c.SourceEs, status.Status)
+					<-timer.C
+					continue
+				}
+			}
 
-	// get all indexes from source
-	indexNames,indexCount, sourceIndexMappings,err := c.SourceESAPI.GetIndexMappings(c.CopyAllIndexes,c.SourceIndexNames);
-	if(err!=nil){
-		log.Error(err)
-		return
-	}
+			if len(c.TargetEs) > 0 {
+				if status, ready := c.ClusterReady(c.TargetESAPI); !ready {
+					log.Infof("%s at %s is %s, delaying migration ", status.Name, c.TargetEs, status.Status)
+					<-timer.C
+					continue
+				}
+			}
+			timer.Stop()
+			break
+		}
 
-	sourceIndexRefreshSettings:=map[string]interface{}{}
-
-	if(indexCount>0){
-		//override indexnames to be copy
-		c.SourceIndexNames =indexNames
-
-		// copy index settings if user asked
-		if(c.CopyIndexSettings||c.ShardsCount>0){
-			log.Info("start settings/mappings migration..")
-
-			//get source index settings
-			var sourceIndexSettings *Indexes
-			sourceIndexSettings,err := c.SourceESAPI.GetIndexSettings(c.SourceIndexNames)
-			log.Debug("source index settings:", sourceIndexSettings)
+		if len(c.SourceEs) > 0 {
+			// get all indexes from source
+			indexNames, indexCount, sourceIndexMappings, err := c.SourceESAPI.GetIndexMappings(c.CopyAllIndexes, c.SourceIndexNames)
 			if err != nil {
 				log.Error(err)
 				return
 			}
 
-			//get target index settings
-			targetIndexSettings,err := c.TargetESAPI.GetIndexSettings(c.TargetIndexName);
-			if(err!=nil){
-				//ignore target es settings error
-				log.Debug(err)
-			}
-			log.Debug("target IndexSettings", targetIndexSettings)
+			sourceIndexRefreshSettings := map[string]interface{}{}
 
+			if indexCount > 0 {
+				//override indexnames to be copy
+				c.SourceIndexNames = indexNames
 
-			//if there is only one index and we specify the dest indexname
-			if((c.SourceIndexNames !=c.TargetIndexName)&&(indexCount==1||(len(c.TargetIndexName)>0))){
-				log.Debug("only one index,so we can rewrite indexname")
-				(*sourceIndexSettings)[c.TargetIndexName]=(*sourceIndexSettings)[c.SourceIndexNames]
-				delete(*sourceIndexSettings,c.SourceIndexNames)
-				log.Debug(sourceIndexSettings)
-			}
+				// copy index settings if user asked
+				if c.CopyIndexSettings || c.ShardsCount > 0 {
+					log.Info("start settings/mappings migration..")
 
-			// dealing with indices settings
-			for name, idx := range *sourceIndexSettings {
-				log.Debug("dealing with index,name:",name,",settings:",idx)
-				tempIndexSettings:=getEmptyIndexSettings()
-
-				targetIndexExist:=false
-				//if target index settings is exist and we don't copy settings, we use target settings
-				if(targetIndexSettings!=nil){
-					//if target es have this index and we dont copy index settings
-					if val, ok := (*targetIndexSettings)[name]; ok {
-						targetIndexExist=true
-						tempIndexSettings=val.(map[string]interface{})
-					}
-
-					if(c.RecreateIndex){
-						c.TargetESAPI.DeleteIndex(name)
-						targetIndexExist=false
-					}
-				}
-
-				//copy index settings
-				if(c.CopyIndexSettings){
-					tempIndexSettings=((*sourceIndexSettings)[name]).(map[string]interface{})
-				}
-
-				//check map elements
-				if _, ok := tempIndexSettings["settings"]; !ok {
-					tempIndexSettings["settings"] = map[string]interface{}{}
-				}
-
-				if _, ok := tempIndexSettings["settings"].(map[string]interface{})["index"]; !ok {
-					tempIndexSettings["settings"].(map[string]interface{})["index"] = map[string]interface{}{}
-				}
-
-				sourceIndexRefreshSettings[name]=((*sourceIndexSettings)[name].(map[string]interface{}))["settings"].(map[string]interface{})["index"].(map[string]interface{})["refresh_interval"]
-
-				//set refresh_interval
-				tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["refresh_interval"] = -1
-				tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_replicas"] = 0
-
-				//clean up settings
-				delete(tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{}),"number_of_shards")
-
-
-				//copy indexsettings and mappings
-				if(targetIndexExist){
-					log.Debug("update index with settings,",name,tempIndexSettings)
-					err:=c.TargetESAPI.UpdateIndexSettings(name,tempIndexSettings)
+					//get source index settings
+					var sourceIndexSettings *Indexes
+					sourceIndexSettings, err := c.SourceESAPI.GetIndexSettings(c.SourceIndexNames)
+					log.Debug("source index settings:", sourceIndexSettings)
 					if err != nil {
 						log.Error(err)
-					}
-				}else{
-
-					//override shard settings
-					if(c.ShardsCount>0){
-						tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_shards"] = c.ShardsCount
+						return
 					}
 
-					log.Debug("create index with settings,",name,tempIndexSettings)
-					err:=c.TargetESAPI.CreateIndex(name,tempIndexSettings)
+					//get target index settings
+					targetIndexSettings, err := c.TargetESAPI.GetIndexSettings(c.TargetIndexName)
 					if err != nil {
-						log.Error(err)
+						//ignore target es settings error
+						log.Debug(err)
+					}
+					log.Debug("target IndexSettings", targetIndexSettings)
+
+					//if there is only one index and we specify the dest indexname
+					if (c.SourceIndexNames != c.TargetIndexName) && (indexCount == 1 || (len(c.TargetIndexName) > 0)) {
+						log.Debug("only one index,so we can rewrite indexname")
+						(*sourceIndexSettings)[c.TargetIndexName] = (*sourceIndexSettings)[c.SourceIndexNames]
+						delete(*sourceIndexSettings, c.SourceIndexNames)
+						log.Debug(sourceIndexSettings)
 					}
 
+					// dealing with indices settings
+					for name, idx := range *sourceIndexSettings {
+						log.Debug("dealing with index,name:", name, ",settings:", idx)
+						tempIndexSettings := getEmptyIndexSettings()
 
-				}
+						targetIndexExist := false
+						//if target index settings is exist and we don't copy settings, we use target settings
+						if targetIndexSettings != nil {
+							//if target es have this index and we dont copy index settings
+							if val, ok := (*targetIndexSettings)[name]; ok {
+								targetIndexExist = true
+								tempIndexSettings = val.(map[string]interface{})
+							}
 
+							if c.RecreateIndex {
+								c.TargetESAPI.DeleteIndex(name)
+								targetIndexExist = false
+							}
+						}
 
-			}
+						//copy index settings
+						if c.CopyIndexSettings {
+							tempIndexSettings = ((*sourceIndexSettings)[name]).(map[string]interface{})
+						}
 
-			if(c.CopyIndexMappings){
-				log.Debug("start process with mappings")
-				if(descESVersion.Version.Number[0]!=srcESVersion.Version.Number[0]){
-					log.Error(srcESVersion.Version,"=>",descESVersion.Version,",cross-big-version mapping migration not avaiable, please update mapping manually :(")
-					return
-				}
+						//check map elements
+						if _, ok := tempIndexSettings["settings"]; !ok {
+							tempIndexSettings["settings"] = map[string]interface{}{}
+						}
 
-				//if there is only one index and we specify the dest indexname
-				if((c.SourceIndexNames !=c.TargetIndexName)&&(indexCount==1||(len(c.TargetIndexName)>0))){
-					log.Debug("only one index,so we can rewrite indexname")
-					(*sourceIndexMappings)[c.TargetIndexName]=(*sourceIndexMappings)[c.SourceIndexNames]
-					delete(*sourceIndexMappings,c.SourceIndexNames)
-					log.Debug(sourceIndexMappings)
-				}
+						if _, ok := tempIndexSettings["settings"].(map[string]interface{})["index"]; !ok {
+							tempIndexSettings["settings"].(map[string]interface{})["index"] = map[string]interface{}{}
+						}
 
-				for name, mapping := range *sourceIndexMappings {
-					err:=c.TargetESAPI.UpdateIndexMapping(name,mapping.(map[string]interface{})["mappings"].(map[string]interface{}))
-					if(err!=nil){
-						log.Error(err)
+						sourceIndexRefreshSettings[name] = ((*sourceIndexSettings)[name].(map[string]interface{}))["settings"].(map[string]interface{})["index"].(map[string]interface{})["refresh_interval"]
+
+						//set refresh_interval
+						tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["refresh_interval"] = -1
+						tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_replicas"] = 0
+
+						//clean up settings
+						delete(tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{}), "number_of_shards")
+
+						//copy indexsettings and mappings
+						if targetIndexExist {
+							log.Debug("update index with settings,", name, tempIndexSettings)
+							err := c.TargetESAPI.UpdateIndexSettings(name, tempIndexSettings)
+							if err != nil {
+								log.Error(err)
+							}
+						} else {
+
+							//override shard settings
+							if c.ShardsCount > 0 {
+								tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_shards"] = c.ShardsCount
+							}
+
+							log.Debug("create index with settings,", name, tempIndexSettings)
+							err := c.TargetESAPI.CreateIndex(name, tempIndexSettings)
+							if err != nil {
+								log.Error(err)
+							}
+
+						}
+
 					}
+
+					if c.CopyIndexMappings {
+
+						//if there is only one index and we specify the dest indexname
+						if (c.SourceIndexNames != c.TargetIndexName) && (indexCount == 1 || (len(c.TargetIndexName) > 0)) {
+							log.Debug("only one index,so we can rewrite indexname")
+							(*sourceIndexMappings)[c.TargetIndexName] = (*sourceIndexMappings)[c.SourceIndexNames]
+							delete(*sourceIndexMappings, c.SourceIndexNames)
+							log.Debug(sourceIndexMappings)
+						}
+
+						for name, mapping := range *sourceIndexMappings {
+							err := c.TargetESAPI.UpdateIndexMapping(name, mapping.(map[string]interface{})["mappings"].(map[string]interface{}))
+							if err != nil {
+								log.Error(err)
+							}
+						}
+					}
+
+					log.Info("settings/mappings migration finished.")
 				}
+
+			} else {
+				log.Error("index not exists,", c.SourceIndexNames)
+				return
 			}
 
-			log.Info("settings/mappings migration finished.")
+			defer c.recoveryIndexSettings(sourceIndexRefreshSettings)
+		} else if len(c.DumpInputFile) > 0 {
+			//check shard settings
+			//TODO support shard config
 		}
 
-
-	}else{
-		log.Error("index not exists,",c.SourceIndexNames)
-		return
-	}
-
-		defer c.recoveryIndexSettings(sourceIndexRefreshSettings)
 	}
 
 	log.Info("start data migration..")
 
-	// start scroll
-	scroll, err := c.SourceESAPI.NewScroll(c.SourceIndexNames,c.ScrollTime,c.DocBufferCount,c.Query)
-	if err != nil {
-		log.Error(err)
-		return
+	//start es bulk thread
+	if len(c.TargetEs) > 0 {
+		log.Debug("start es bulk workers")
+		var docCount int
+		wg.Add(c.Workers)
+		for i := 0; i < c.Workers; i++ {
+			go c.NewBulkWorker(&docCount, outputBar, &wg)
+		}
+	} else if len(c.DumpOutFile) > 0 {
+		// start file write
+		wg.Add(1)
+		go c.NewFileDumpWorker(outputBar, &wg)
 	}
 
-	if scroll != nil && scroll.Hits.Docs != nil {
-		if(scroll.Hits.Total==0){
-			log.Error("can't find documents from source.")
-			return
-		}
-		// create a progressbar and start a docCount
-		fetchBar := pb.New(scroll.Hits.Total).Prefix("Pull ")
-		outputBar := pb.New(scroll.Hits.Total).Prefix("Push ")
-
-
-		// start pool
-		pool, err := pb.StartPool(fetchBar, outputBar)
-		if err != nil {
-			panic(err)
-		}
-
-		wg := sync.WaitGroup{}
-		//start es bulk thread
-		if(len(c.TargetEs)>0){
-			var docCount int
-			wg.Add(c.Workers)
-			for i := 0; i < c.Workers; i++ {
-				go c.NewBulkWorker(&docCount, outputBar, &wg)
-			}
-		}else  if(len(c.DumpOutFile)>0){
-			// start file write
-			wg.Add(1)
-			go c.NewFileDumpWorker(outputBar,&wg)
-		}
-
-		scroll.ProcessScrollResult(&c,fetchBar)
-
-		// loop scrolling until done
-		for scroll.Next(&c, fetchBar) == false {
-		}
-		fetchBar.Finish()
-
-		// finished, close doc chan and wait for goroutines to be done
-		close(c.DocChan)
-		wg.Wait()
-		outputBar.Finish()
-		// close pool
-		pool.Stop()
-	}
+	wg.Wait()
+	outputBar.Finish()
+	// close pool
+	pool.Stop()
 
 	log.Info("data migration finished.")
-
-
 }
 
-func (c *Config)recoveryIndexSettings(sourceIndexRefreshSettings map[string]interface{})  {
+func (c *Config) recoveryIndexSettings(sourceIndexRefreshSettings map[string]interface{}) {
 	//update replica and refresh_interval
-	for name,interval  := range  sourceIndexRefreshSettings{
-		tempIndexSettings:=getEmptyIndexSettings()
+	for name, interval := range sourceIndexRefreshSettings {
+		tempIndexSettings := getEmptyIndexSettings()
 		tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["refresh_interval"] = interval
 		//tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_replicas"] = 0
-		c.TargetESAPI.UpdateIndexSettings(name,tempIndexSettings)
-		if(c.Refresh){
+		c.TargetESAPI.UpdateIndexSettings(name, tempIndexSettings)
+		if c.Refresh {
 			c.TargetESAPI.Refresh(name)
 		}
 	}
 }
 
-func (c *Config) ClusterVersion(host string,auth *Auth) (*ClusterVersion, []error) {
+func (c *Config) ClusterVersion(host string, auth *Auth) (*ClusterVersion, []error) {
 
 	url := fmt.Sprintf("%s", host)
-	_, body, errs := Get(url,auth)
+	_, body, errs := Get(url, auth)
 	if errs != nil {
 		log.Error(errs)
-		return nil,errs
+		return nil, errs
 	}
 
 	log.Debug(body)
@@ -361,9 +414,9 @@ func (c *Config) ClusterVersion(host string,auth *Auth) (*ClusterVersion, []erro
 
 	if err != nil {
 		log.Error(body, errs)
-		return nil,errs
+		return nil, errs
 	}
-	return version,nil
+	return version, nil
 }
 
 func (c *Config) ClusterReady(api ESAPI) (*ClusterHealth, bool) {
