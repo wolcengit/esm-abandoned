@@ -44,7 +44,7 @@ func (s *Scroll) ProcessScrollResult(c *Config, bar *pb.ProgressBar){
 
 func (s *Scroll) Next(c *Config, bar *pb.ProgressBar) (done bool) {
 
-	scroll,err:=c.SrcESAPI.NextScroll(c.ScrollTime,s.ScrollId)
+	scroll,err:=c.SourceESAPI.NextScroll(c.ScrollTime,s.ScrollId)
 	if err != nil {
 		log.Error(err)
 		return false

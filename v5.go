@@ -43,10 +43,16 @@ func (s *ESAPIV5) GetIndexMappings(copyAllIndexes bool,indexNames string)(string
 	return s.ESAPIV0.GetIndexMappings(copyAllIndexes,indexNames)
 }
 
-func (s *ESAPIV5) UpdateIndexSettings(){}
+func (s *ESAPIV5) UpdateIndexSettings(indexName string,settings map[string]interface{})(error){
+	return s.ESAPIV0.UpdateIndexSettings(indexName,settings)
+}
 
-func (s *ESAPIV5) CreateIndexes(idxs *Indexes) (err error) {
-	return s.ESAPIV0.CreateIndexes(idxs)
+func (s *ESAPIV5) DeleteIndex(name string) (err error) {
+	return s.ESAPIV0.DeleteIndex(name)
+}
+
+func (s *ESAPIV5) CreateIndex(name string,settings map[string]interface{}) (err error) {
+	return s.ESAPIV0.CreateIndex(name,settings)
 }
 
 func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount int)(scroll *Scroll, err error){

@@ -56,8 +56,8 @@ func (c *Config) NewBulkWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitG
 		var tempDestIndexName string
 		tempDestIndexName = docI["_index"].(string)
 
-		if c.DestIndexName != "" {
-			tempDestIndexName = c.DestIndexName
+		if c.TargetIndexName != "" {
+			tempDestIndexName = c.TargetIndexName
 		}
 
 		doc := Document{
@@ -91,7 +91,7 @@ func (c *Config) NewBulkWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitG
 
 		// if we approach the 100mb es limit, flush to es and reset mainBuf
 		if mainBuf.Len()+docBuf.Len() > (c.BulkSizeInMB * 1000000) {
-			c.DescESAPI.Bulk(&mainBuf)
+			c.TargetESAPI.Bulk(&mainBuf)
 			pb.Add(bulkItemSize)
 			bulkItemSize = 0
 		}
@@ -109,7 +109,7 @@ func (c *Config) NewBulkWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitG
 		mainBuf.Write(docBuf.Bytes())
 		bulkItemSize++
 	}
-	c.DescESAPI.Bulk(&mainBuf)
+	c.TargetESAPI.Bulk(&mainBuf)
 	pb.Add(bulkItemSize)
 	bulkItemSize = 0
 	wg.Done()

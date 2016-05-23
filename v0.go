@@ -17,26 +17,27 @@ limitations under the License.
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	log "github.com/cihub/seelog"
-	"bytes"
-	"strings"
-	"regexp"
-	"net/http"
 	"io/ioutil"
-	"errors"
+	"net/http"
+	"regexp"
+	"strings"
 )
 
-type ESAPIV0 struct{
-	Host string //eg: http://localhost:9200
-	Auth *Auth //eg: user:pass
+type ESAPIV0 struct {
+	Host      string //eg: http://localhost:9200
+	Auth      *Auth  //eg: user:pass
+	HttpProxy string //eg: http://proxyIp:proxyPort
 }
 
 func (s *ESAPIV0) ClusterHealth() *ClusterHealth {
 
 	url := fmt.Sprintf("%s/_cluster/health", s.Host)
-	_, body, errs := Get(url,s.Auth)
+	_, body, errs := Get(url, s.Auth)
 
 	if errs != nil {
 		return &ClusterHealth{Name: s.Host, Status: "unreachable"}
@@ -54,25 +55,25 @@ func (s *ESAPIV0) ClusterHealth() *ClusterHealth {
 	return health
 }
 
-func (s *ESAPIV0) Bulk(data *bytes.Buffer){
+func (s *ESAPIV0) Bulk(data *bytes.Buffer) {
 	if data == nil || data.Len() == 0 {
 		return
 	}
 	data.WriteRune('\n')
-	url:=fmt.Sprintf("%s/_bulk", s.Host)
+	url := fmt.Sprintf("%s/_bulk", s.Host)
 
 	client := &http.Client{}
 	reqest, _ := http.NewRequest("POST", url, data)
-	if(s.Auth!=nil){
-		reqest.SetBasicAuth(s.Auth.User,s.Auth.Pass)
+	if s.Auth != nil {
+		reqest.SetBasicAuth(s.Auth.User, s.Auth.Pass)
 	}
-	resp,errs := client.Do(reqest)
+	resp, errs := client.Do(reqest)
 	if errs != nil {
 		log.Error(errs)
 		return
 	}
 
-	body,err:=ioutil.ReadAll(resp.Body)
+	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Error(err)
 		return
@@ -91,67 +92,46 @@ func (s *ESAPIV0) GetIndexSettings(indexNames string) (*Indexes, error) {
 	// get all settings
 	allSettings := &Indexes{}
 
-	url:=fmt.Sprintf("%s/%s/_settings", s.Host,indexNames)
-	resp,body, errs := Get(url,s.Auth)
+	url := fmt.Sprintf("%s/%s/_settings", s.Host, indexNames)
+	resp, body, errs := Get(url, s.Auth)
 	if errs != nil {
-		return nil,errs[0]
+		return nil, errs[0]
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil,errors.New(body)
+		return nil, errors.New(body)
 	}
 
 	log.Debug(body)
 
-	err := json.Unmarshal([]byte(body),allSettings)
-	if(err!=nil){
-		return nil,err
+	err := json.Unmarshal([]byte(body), allSettings)
+	if err != nil {
+		return nil, err
 	}
 
-	//for name, index := range *idxs {
-	//	//TODO 验证 analyzer等setting是否生效
-	//	if settings, ok := allSettings[name]; !ok {
-	//		return log.Errorf("couldnt find index %s", name)
-	//	} else {
-	//		// omg XXX
-	//		index.(map[string]interface{})["settings"] = map[string]interface{}{}
-	//		var shards string
-	//		if _, ok := settings.(map[string]interface{})["settings"].(map[string]interface{})["index"]; ok {
-	//			// try the new style syntax first, which has an index object
-	//			shards = settings.(map[string]interface{})["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_shards"].(string)
-	//		} else {
-	//			// if not, could be running from old es, try the old style index.number_of_shards
-	//			shards = settings.(map[string]interface{})["settings"].(map[string]interface{})["index.number_of_shards"].(string)
-	//		}
-	//		index.(map[string]interface{})["settings"].(map[string]interface{})["index"] = map[string]interface{}{
-	//			"number_of_shards": shards,
-	//		}
-	//	}
-	//}
-
-	return allSettings,nil
+	return allSettings, nil
 }
 
-func (s *ESAPIV0) GetIndexMappings(copyAllIndexes bool,indexNames string)(string,int,*Indexes,error){
-	url:=fmt.Sprintf("%s/%s/_mapping", s.Host, indexNames)
-	resp,body, errs := Get(url,s.Auth)
+func (s *ESAPIV0) GetIndexMappings(copyAllIndexes bool, indexNames string) (string, int, *Indexes, error) {
+	url := fmt.Sprintf("%s/%s/_mapping", s.Host, indexNames)
+	resp, body, errs := Get(url, s.Auth)
 	if errs != nil {
 		log.Error(errs)
-		return "",0,nil,errs[0]
+		return "", 0, nil, errs[0]
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return "",0,nil,errors.New(body)
+		return "", 0, nil, errors.New(body)
 	}
 
 	idxs := Indexes{}
-	er := json.Unmarshal([]byte(body),&idxs)
+	er := json.Unmarshal([]byte(body), &idxs)
 
 	if er != nil {
 		log.Error(body)
-		return "",0,nil,er
+		return "", 0, nil, er
 	}
 
 	// remove indexes that start with . if user asked for it
@@ -193,7 +173,7 @@ func (s *ESAPIV0) GetIndexMappings(copyAllIndexes bool,indexNames string)(string
 
 	}
 
-	i:=0
+	i := 0
 	// wrap in mappings if moving from super old es
 	for name, idx := range idxs {
 		i++
@@ -204,105 +184,131 @@ func (s *ESAPIV0) GetIndexMappings(copyAllIndexes bool,indexNames string)(string
 		}
 	}
 
-	return indexNames,i,&idxs,nil
+	return indexNames, i, &idxs, nil
 }
 
+func getIndexEmptySettings() map[string]interface{} {
+	tempIndexSettings := map[string]interface{}{}
+	tempIndexSettings["settings"] = map[string]interface{}{}
+	tempIndexSettings["settings"].(map[string]interface{})["index"] = map[string]interface{}{}
+	return tempIndexSettings
+}
 
+func cleanSettings(settings map[string]interface{}) {
+	//clean up settings
+	delete(settings["settings"].(map[string]interface{})["index"].(map[string]interface{}), "creation_date")
+	delete(settings["settings"].(map[string]interface{})["index"].(map[string]interface{}), "uuid")
+	delete(settings["settings"].(map[string]interface{})["index"].(map[string]interface{}), "version")
+}
 
-func (s *ESAPIV0) UpdateIndexSettings(){}
+func (s *ESAPIV0) UpdateIndexSettings(name string, settings map[string]interface{}) error {
 
+	log.Debug("start update index: ", name, settings)
 
-// CreateIndexes on remodeleted ES instance
-func (s *ESAPIV0) CreateIndexes(idxs *Indexes) (err error) {
+	url := fmt.Sprintf("%s/%s/_settings", s.Host, name)
 
-	for name, idx := range *idxs {
-		body := bytes.Buffer{}
-		enc := json.NewEncoder(&body)
-		enc.Encode(idx)
-
-		log.Debug("start create index: ",name)
-
-
-		url:=fmt.Sprintf("%s/%s", s.Host, name)
-		client := &http.Client{}
-		reqest, _ := http.NewRequest("POST", url, &body)
-		if(s.Auth!=nil){
-			reqest.SetBasicAuth(s.Auth.User,s.Auth.Pass)
+	if _, ok := settings["settings"].(map[string]interface{})["index"]; ok {
+		if set, ok := settings["settings"].(map[string]interface{})["index"].(map[string]interface{})["analysis"]; ok {
+			log.Debug("update static index settings: ", name)
+			staticIndexSettings := getIndexEmptySettings()
+			staticIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["analysis"] = set
+			Post(fmt.Sprintf("%s/%s/_close", s.Host, name), s.Auth, "")
+			body := bytes.Buffer{}
+			enc := json.NewEncoder(&body)
+			enc.Encode(staticIndexSettings)
+			bodyStr, err := Request("PUT", url, s.Auth, &body)
+			if err != nil {
+				log.Error(bodyStr, err)
+				return err
+			}
+			delete(settings["settings"].(map[string]interface{})["index"].(map[string]interface{}), "analysis")
+			Post(fmt.Sprintf("%s/%s/_open", s.Host, name), s.Auth, "")
 		}
-		resp,errs := client.Do(reqest)
-		if errs != nil {
-			log.Error(errs)
-			return errs
-		}
-
-		if resp.StatusCode != 200 {
-			b, _ := ioutil.ReadAll(resp.Body)
-			return errors.New("failed creating index: "+string(b))
-		}
-
-		respBody,err:=ioutil.ReadAll(resp.Body)
-		if err != nil {
-			log.Error(err)
-			return err
-		}
-
-		log.Debug(name,string(respBody))
-
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		log.Info("created index: ", name)
 	}
+
+	log.Debug("update dynamic index settings: ", name)
+
+	body := bytes.Buffer{}
+	enc := json.NewEncoder(&body)
+	enc.Encode(settings)
+	_, err := Request("PUT", url, s.Auth, &body)
+
+	return err
+}
+
+func (s *ESAPIV0) DeleteIndex(name string) (err error) {
+
+	log.Debug("start delete index: ", name)
+
+	url := fmt.Sprintf("%s/%s", s.Host, name)
+
+	Request("DELETE", url, s.Auth, nil)
+
+	log.Debug("delete index: ", name)
 
 	return nil
 }
 
-func (s *ESAPIV0) NewScroll(indexNames string,scrollTime string,docBufferCount int)(scroll *Scroll, err error){
+func (s *ESAPIV0) CreateIndex(name string, settings map[string]interface{}) (err error) {
+	cleanSettings(settings)
+
+	body := bytes.Buffer{}
+	enc := json.NewEncoder(&body)
+	enc.Encode(settings)
+	log.Debug("start create index: ", name, settings)
+
+	url := fmt.Sprintf("%s/%s", s.Host, name)
+
+	resp, err := Request("POST", url, s.Auth, &body)
+	log.Debug(resp)
+
+	return err
+}
+
+func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount int) (scroll *Scroll, err error) {
 
 	// curl -XGET 'http://es-0.9:9200/_search?search_type=scan&scroll=10m&size=50'
 	url := fmt.Sprintf("%s/%s/_search?search_type=scan&scroll=%s&size=%d", s.Host, indexNames, scrollTime, docBufferCount)
-	resp,body, errs := Get(url,s.Auth)
+	resp, body, errs := Get(url, s.Auth)
 	if err != nil {
 		log.Error(errs)
-		return nil,errs[0]
+		return nil, errs[0]
 	}
 	defer resp.Body.Close()
 
-	log.Trace("new scroll,",body)
+	log.Trace("new scroll,", body)
 
 	if err != nil {
 		log.Error(err)
-		return nil,err
+		return nil, err
 	}
 
-
 	if resp.StatusCode != 200 {
-		return nil,errors.New(body)
+		return nil, errors.New(body)
 	}
 
 	scroll = &Scroll{}
-	err = json.Unmarshal([]byte(body),scroll)
+	err = json.Unmarshal([]byte(body), scroll)
 	if err != nil {
 		log.Error(err)
-		return nil,err
+		return nil, err
 	}
 
-	return scroll,err
+	return scroll, err
 }
 
-func (s *ESAPIV0) NextScroll(scrollTime string,scrollId string)(*Scroll,error)  {
+func (s *ESAPIV0) NextScroll(scrollTime string, scrollId string) (*Scroll, error) {
 	//  curl -XGET 'http://es-0.9:9200/_search/scroll?scroll=5m'
 	id := bytes.NewBufferString(scrollId)
-	url:=fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", s.Host, scrollTime, id)
-	resp,body, errs := Get(url,s.Auth)
+	url := fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", s.Host, scrollTime, id)
+	resp, body, errs := Get(url, s.Auth)
 	if errs != nil {
 		log.Error(errs)
-		return nil,errs[0]
+		return nil, errs[0]
 	}
 
 	if resp.StatusCode != 200 {
-		return nil,errors.New(body)
+		return nil, errors.New(body)
 	}
 
 	defer resp.Body.Close()
@@ -313,8 +319,8 @@ func (s *ESAPIV0) NextScroll(scrollTime string,scrollId string)(*Scroll,error)  
 	if err != nil {
 		log.Error(body)
 		log.Error(err)
-		return nil,err
+		return nil, err
 	}
 
-	return scroll,nil
+	return scroll, nil
 }

@@ -31,11 +31,11 @@ func main() {
 	setInitLogging(c.LogLevel)
 
 
-	if(len(c.SrcEs)==0&&len(c.DumpInputFile)==0){
+	if(len(c.SourceEs)==0&&len(c.DumpInputFile)==0){
 		log.Error("no input, type --help for more details")
 		return
 	}
-	if(len(c.DestEs)==0&&len(c.DumpOutFile)==0){
+	if(len(c.TargetEs)==0&&len(c.DumpOutFile)==0){
 		log.Error("no output, type --help for more details")
 		return
 	}
@@ -46,79 +46,69 @@ func main() {
 
 
 	//dealing with basic auth
-	if(len(c.SrcEsAuthStr)>0&&strings.Contains(c.SrcEsAuthStr,":")){
-		authArray:=strings.Split(c.SrcEsAuthStr,":")
+	if(len(c.SourceEsAuthStr)>0&&strings.Contains(c.SourceEsAuthStr,":")){
+		authArray:=strings.Split(c.SourceEsAuthStr,":")
 		auth:=Auth{User:authArray[0],Pass:authArray[1]}
-		c.SrcAuth=&auth
+		c.SourceAuth =&auth
 	}
-	if(len(c.DestEsAuthStr)>0&&strings.Contains(c.DestEsAuthStr,":")){
-		authArray:=strings.Split(c.DestEsAuthStr,":")
+	if(len(c.TargetEsAuthStr)>0&&strings.Contains(c.TargetEsAuthStr,":")){
+		authArray:=strings.Split(c.TargetEsAuthStr,":")
 		auth:=Auth{User:authArray[0],Pass:authArray[1]}
-		c.DescAuth=&auth
+		c.TargetAuth =&auth
 	}
 
 	//get source es version
-	srcESVersion, errs := c.ClusterVersion(c.SrcEs,c.SrcAuth)
+	srcESVersion, errs := c.ClusterVersion(c.SourceEs,c.SourceAuth)
 	if errs != nil {
 		return
 	}
 
 	if strings.HasPrefix(srcESVersion.Version.Number,"5.") {
-		log.Debug("src es is V5,",srcESVersion.Version.Number)
+		log.Debug("source es is V5,",srcESVersion.Version.Number)
 		api:=new(ESAPIV5)
-		api.Host=c.SrcEs
-		api.Auth=c.SrcAuth
-		c.SrcESAPI = api
+		api.Host=c.SourceEs
+		api.Auth=c.SourceAuth
+		c.SourceESAPI = api
 	} else {
-		log.Debug("src es is not V5,",srcESVersion.Version.Number)
+		log.Debug("source es is not V5,",srcESVersion.Version.Number)
 		api:=new(ESAPIV0)
-		api.Host=c.SrcEs
-		api.Auth=c.SrcAuth
-		c.SrcESAPI = api
+		api.Host=c.SourceEs
+		api.Auth=c.SourceAuth
+		c.SourceESAPI = api
 	}
 
 	//get target es version
-	descESVersion, errs := c.ClusterVersion(c.DestEs,c.DescAuth)
+	descESVersion, errs := c.ClusterVersion(c.TargetEs,c.TargetAuth)
 	if errs != nil {
 		return
 	}
 
 	if strings.HasPrefix(descESVersion.Version.Number,"5.") {
-		log.Debug("dest es is V5,",descESVersion.Version.Number)
+		log.Debug("target es is V5,",descESVersion.Version.Number)
 		api:=new(ESAPIV5)
-		api.Host=c.DestEs
-		api.Auth=c.DescAuth
-		c.DescESAPI = api
+		api.Host=c.TargetEs
+		api.Auth=c.TargetAuth
+		c.TargetESAPI = api
 	} else {
-		log.Debug("dest es is not V5,",descESVersion.Version.Number)
+		log.Debug("target es is not V5,",descESVersion.Version.Number)
 		api:=new(ESAPIV0)
-		api.Host=c.DestEs
-		api.Auth=c.DescAuth
-		c.DescESAPI = api
+		api.Host=c.TargetEs
+		api.Auth=c.TargetAuth
+		c.TargetESAPI = api
 
 	}
-
-	// get all indexes from source
-	indexNames,indexCount, srcIndexMappings,err := c.SrcESAPI.GetIndexMappings(c.CopyAllIndexes,c.SrcIndexNames);
-	if(err!=nil){
-		log.Error(err)
-		return
-	}
-
-	//override indexnames to be copy
-	c.SrcIndexNames=indexNames
 
 	// wait for cluster state to be okay before moving
 	timer := time.NewTimer(time.Second * 3)
 
 	for {
-		if status, ready := c.ClusterReady(c.SrcESAPI); !ready {
-			log.Infof("%s at %s is %s, delaying move ", status.Name, c.SrcEs, status.Status)
+		if status, ready := c.ClusterReady(c.SourceESAPI); !ready {
+			log.Infof("%s at %s is %s, delaying migration ", status.Name, c.SourceEs, status.Status)
 			<-timer.C
 			continue
 		}
-		if status, ready := c.ClusterReady(c.DescESAPI); !ready {
-			log.Infof("%s at %s is %s, delaying move ", status.Name, c.DestEs, status.Status)
+		if status, ready := c.ClusterReady(c.TargetESAPI); !ready {
+			log.Infof("%s at %s is %s, delaying migration ", status.Name, c.TargetEs, status.Status)
 			<-timer.C
 			continue
 		}
@@ -127,59 +117,131 @@ func main() {
 		break
 	}
 
-	// copy index settings if user asked
-	if(c.CopyIndexSettings||c.ShardsCount>0){
-		log.Info("start moving settings/mappings..")
 
-		var srcIndexSettings *Indexes
-		if(c.CopyIndexSettings){
-			srcIndexSettings,err = c.SrcESAPI.GetIndexSettings(indexNames)
-			log.Debug("src index settings:",srcIndexSettings)
+	// get all indexes from source
+	indexNames,indexCount, srcIndexMappings,err := c.SourceESAPI.GetIndexMappings(c.CopyAllIndexes,c.SourceIndexNames);
+	if(err!=nil){
+		log.Error(err)
+		return
+	}
 
+	if(indexCount>0){
+		//override indexnames to be copy
+		c.SourceIndexNames =indexNames
+
+		// copy index settings if user asked
+		if(c.CopyIndexSettings||c.ShardsCount>0){
+			log.Info("start settings/mappings migration..")
+
+			//get source index settings
+			var sourceIndexSettings *Indexes
+			sourceIndexSettings,err := c.SourceESAPI.GetIndexSettings(c.SourceIndexNames)
+			log.Debug("source index settings:", sourceIndexSettings)
 			if err != nil {
 				log.Error(err)
 				return
 			}
-		}else{
-			srcIndexSettings=&Indexes{}
-			//TODO
-			//it seems we need to reshard
-			for name := range *srcIndexMappings {
-				//srcIndexSettings.SetShardCount(name, fmt.Sprint(c.ShardsCount))
-				log.Debug(name)
+
+			//get target index settings
+			targetIndexSettings,err := c.TargetESAPI.GetIndexSettings(c.TargetIndexName);
+			if(err!=nil){
+				//ignore target es settings error
+				log.Debug(err)
 			}
-		}
+			log.Debug("target IndexSettings", targetIndexSettings)
 
 
-		// overwrite index shard settings
-		if c.ShardsCount > 0 {
-			for name := range *srcIndexSettings {
-				srcIndexSettings.SetShardCount(name, fmt.Sprint(c.ShardsCount))
+			//if there is only one index and we specify the dest indexname
+			if((c.SourceIndexNames !=c.TargetIndexName)&&(indexCount==1||(len(c.TargetIndexName)>0))){
+				log.Debug("only one index,so we can rewrite indexname")
+				(*sourceIndexSettings)[c.TargetIndexName]=(*sourceIndexSettings)[c.SourceIndexNames]
+				delete(*sourceIndexSettings,c.SourceIndexNames)
+				log.Debug(sourceIndexSettings)
 			}
+
+			// dealing with indices settings
+			for name, idx := range *sourceIndexSettings {
+				log.Debug("dealing with index,name:",name,",settings:",idx)
+				tempIndexSettings:=map[string]interface{}{}
+				tempIndexSettings["settings"] = map[string]interface{}{}
+
+				targetIndexExist:=false
+				//if target index settings is exist and we don't copy settings, we use target settings
+				if(targetIndexSettings!=nil){
+					//if target es have this index and we dont copy index settings
+					if val, ok := (*targetIndexSettings)[name]; ok {
+						targetIndexExist=true
+						tempIndexSettings=val.(map[string]interface{})
+					}
+
+					if(c.RecreateIndex){
+						c.TargetESAPI.DeleteIndex(name)
+						targetIndexExist=false
+					}
+				}
+
+				//copy index settings
+				if(c.CopyIndexSettings){
+					tempIndexSettings=((*sourceIndexSettings)[name]).(map[string]interface{})
+				}
+
+				//check map elements
+				if _, ok := tempIndexSettings["settings"]; !ok {
+					tempIndexSettings["settings"] = map[string]interface{}{}
+				}
+
+				if _, ok := tempIndexSettings["settings"].(map[string]interface{})["index"]; !ok {
+					tempIndexSettings["settings"].(map[string]interface{})["index"] = map[string]interface{}{}
+				}
+
+
+				//set refresh_interval
+				tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["refresh_interval"] = -1
+				tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_replicas"] = 0
+
+				//clean up settings
+				delete(tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{}),"number_of_shards")
+
+
+				//copy indexsettings and mappings
+				if(targetIndexExist){
+					log.Debug("update index with settings,",name,tempIndexSettings)
+					err:=c.TargetESAPI.UpdateIndexSettings(name,tempIndexSettings)
+					if err != nil {
+						log.Error(err)
+					}
+				}else{
+
+					//override shard settings
+					if(c.ShardsCount>0){
+						tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_shards"] = c.ShardsCount
+					}
+
+					log.Debug("create index with settings,",name,tempIndexSettings)
+					err:=c.TargetESAPI.CreateIndex(name,tempIndexSettings)
+					if err != nil {
+						log.Error(err)
+					}
+				}
+
+				//TODO c.CreateMappings(srcIndexMappings)
+				log.Debug(srcIndexMappings)
+			}
+
+			log.Info("settings/mappings migration finished.")
 		}
 
-		//if there is only one index and we specify the dest indexname
-		if((c.SrcIndexNames!=c.DestIndexName)&&(indexCount==1||(len(c.DestIndexName)>0))){
-			log.Debug("only one index,so we can rewrite indexname")
-			(*srcIndexSettings)[c.DestIndexName]=(*srcIndexSettings)[c.SrcIndexNames]
-			delete(*srcIndexSettings,c.SrcIndexNames)
-			log.Debug(srcIndexSettings)
-		}
 
-		//copy indexsettings and mappings
-		err=c.DescESAPI.CreateIndexes(srcIndexSettings)
-		if err != nil {
-			log.Error(err)
-		}
-
-		//c.CreateMappings(srcIndexMappings)
-		log.Info("settings/mappings move finished.")
+	}else{
+		log.Error("Index not exists,",c.SourceIndexNames)
+		return
 	}
 
-	log.Info("start moving data..")
+
+	log.Info("start data migration..")
 
 	// start scroll
-	scroll, err := c.SrcESAPI.NewScroll(c.SrcIndexNames,c.ScrollTime,c.DocBufferCount)
+	scroll, err := c.SourceESAPI.NewScroll(c.SourceIndexNames,c.ScrollTime,c.DocBufferCount)
 	if err != nil {
 		log.Error(err)
 		return
@@ -227,7 +289,9 @@ func main() {
 		pool.Stop()
 	}
 
-	log.Info("data move finished.")
+	log.Info("data migration finished.")
+
+	//TODO update replica and refresh_interval
 
 }
 
@@ -250,25 +314,6 @@ func (c *Config) ClusterVersion(host string,auth *Auth) (*ClusterVersion, []erro
 		return nil,errs
 	}
 	return version,nil
-}
-
-func (idxs *Indexes) SetShardCount(indexName, shards string) {
-
-	index := (*idxs)[indexName]
-	if _, ok := (*idxs)[indexName].(map[string]interface{})["settings"]; !ok {
-		index.(map[string]interface{})["settings"] = map[string]interface{}{}
-	}
-
-	if _, ok := (*idxs)[indexName].(map[string]interface{})["settings"].(map[string]interface{})["index"]; !ok {
-		index.(map[string]interface{})["settings"].(map[string]interface{})["index"] = map[string]interface{}{}
-	}
-
-	index.(map[string]interface{})["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_shards"] = shards
-
-	//clean up settings
-	delete(index.(map[string]interface{})["settings"].(map[string]interface{})["index"].(map[string]interface{}),"creation_date")
-	delete(index.(map[string]interface{})["settings"].(map[string]interface{})["index"].(map[string]interface{}),"uuid")
-	delete(index.(map[string]interface{})["settings"].(map[string]interface{})["index"].(map[string]interface{}),"version")
 }
 
 func (c *Config) ClusterReady(api ESAPI) (*ClusterHealth, bool) {
