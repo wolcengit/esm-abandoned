@@ -23,6 +23,7 @@ import (
 	"os"
 	"bufio"
 	"encoding/json"
+	"io"
 )
 
 func checkFileIsExist(filename string) (bool) {
@@ -33,19 +34,70 @@ func checkFileIsExist(filename string) (bool) {
 	return exist;
 }
 
-func (c *Config) NewFileDumpWorker(pb *pb.ProgressBar, wg *sync.WaitGroup) {
+// strip '\n' or read until EOF, return error if read error
+func readLine(reader io.Reader) (line []byte, err error) {
+	line = make([]byte, 0, 100)
+	for {
+		b := make([]byte, 1)
+		n, er := reader.Read(b)
+		if n > 0 {
+			c := b[0]
+			if c == '\n' { // end of line
+				break
+			}
+			line = append(line, c)
+		}
+		if er != nil {
+			err = er
+			return
+		}
+	}
+	return
+}
+
+func (m *Migrator) NewFileReadWorker(pb *pb.ProgressBar, wg *sync.WaitGroup)  {
+	log.Debug("start reading file")
+	f, err := os.Open(m.Config.DumpInputFile)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	scanner := bufio.NewScanner(f)
+	scanner.Split(bufio.ScanLines)
+	lineCount := 0
+	for scanner.Scan() {
+		lineCount++
+		js := map[string]interface{}{}
+		line := scanner.Text()
+		//log.Trace("reading file,",lineCount,",", line)
+		err = json.Unmarshal([]byte(line), &js)
+		if(err!=nil){
+			log.Error(err)
+			continue
+		}
+		m.DocChan <- js
+		pb.Increment()
+	}
+
+	defer f.Close()
+	log.Debug("end reading file")
+	close(m.DocChan)
+	wg.Done()
+}
+
+func (c *Migrator) NewFileDumpWorker(pb *pb.ProgressBar, wg *sync.WaitGroup) {
 	var f *os.File
 	var err1   error;
 
-	if checkFileIsExist(c.DumpOutFile) {
-		f, err1 = os.OpenFile(c.DumpOutFile, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+	if checkFileIsExist(c.Config.DumpOutFile) {
+		f, err1 = os.OpenFile(c.Config.DumpOutFile, os.O_APPEND|os.O_WRONLY, os.ModeAppend)
 		if(err1!=nil){
 			log.Error(err1)
 			return
 		}
 
 	}else {
-		f, err1 = os.Create(c.DumpOutFile)
+		f, err1 = os.Create(c.Config.DumpOutFile)
 		if(err1!=nil){
 			log.Error(err1)
 			return

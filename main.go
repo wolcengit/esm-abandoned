@@ -19,12 +19,13 @@ func main() {
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	c := Config{
-		FlushLock: sync.Mutex{},
-	}
+	c := &Config{}
+	migrator:=Migrator{}
+	migrator.Config=c
+
 
 	// parse args
-	_, err := goflags.Parse(&c)
+	_, err := goflags.Parse(c)
 	if err != nil {
 		log.Error(err)
 		return
@@ -47,7 +48,7 @@ func main() {
 	}
 
 	// enough of a buffer to hold all the search results across all workers
-	c.DocChan = make(chan map[string]interface{}, c.DocBufferCount*c.Workers*10)
+	migrator.DocChan = make(chan map[string]interface{}, c.DocBufferCount*c.Workers*10)
 
 	var srcESVersion *ClusterVersion
 	// create a progressbar and start a docCount
@@ -61,11 +62,11 @@ func main() {
 		if len(c.SourceEsAuthStr) > 0 && strings.Contains(c.SourceEsAuthStr, ":") {
 			authArray := strings.Split(c.SourceEsAuthStr, ":")
 			auth := Auth{User: authArray[0], Pass: authArray[1]}
-			c.SourceAuth = &auth
+			migrator.SourceAuth = &auth
 		}
 
 		//get source es version
-		srcESVersion, errs := c.ClusterVersion(c.SourceEs, c.SourceAuth)
+		srcESVersion, errs := migrator.ClusterVersion(c.SourceEs, migrator.SourceAuth)
 		if errs != nil {
 			return
 		}
@@ -73,17 +74,17 @@ func main() {
 			log.Debug("source es is V5,", srcESVersion.Version.Number)
 			api := new(ESAPIV5)
 			api.Host = c.SourceEs
-			api.Auth = c.SourceAuth
-			c.SourceESAPI = api
+			api.Auth = migrator.SourceAuth
+			migrator.SourceESAPI = api
 		} else {
 			log.Debug("source es is not V5,", srcESVersion.Version.Number)
 			api := new(ESAPIV0)
 			api.Host = c.SourceEs
-			api.Auth = c.SourceAuth
-			c.SourceESAPI = api
+			api.Auth = migrator.SourceAuth
+			migrator.SourceESAPI = api
 		}
 
-		scroll, err := c.SourceESAPI.NewScroll(c.SourceIndexNames, c.ScrollTime, c.DocBufferCount, c.Query)
+		scroll, err := migrator.SourceESAPI.NewScroll(c.SourceIndexNames, c.ScrollTime, c.DocBufferCount, c.Query)
 		if err != nil {
 			log.Error(err)
 			return
@@ -96,25 +97,24 @@ func main() {
 			}
 
 			fetchBar = pb.New(scroll.Hits.Total).Prefix("Scroll ")
-			outputBar = pb.New(scroll.Hits.Total).Prefix("Bulk ")
+			outputBar = pb.New(scroll.Hits.Total).Prefix("Output ")
 		}
 
 		go func() {
 			wg.Add(1)
 			//process input
 			// start scroll
-			scroll.ProcessScrollResult(&c, fetchBar)
+			scroll.ProcessScrollResult(&migrator, fetchBar)
 
 			// loop scrolling until done
-			for scroll.Next(&c, fetchBar) == false {
+			for scroll.Next(&migrator, fetchBar) == false {
 			}
 			fetchBar.Finish()
 			// finished, close doc chan and wait for goroutines to be done
 			wg.Done()
-			close(c.DocChan)
+			close(migrator.DocChan)
 		}()
 	} else if len(c.DumpInputFile) > 0 {
-		log.Debug("start reading file")
 		//read file stream
 		wg.Add(1)
 		f, err := os.Open(c.DumpInputFile)
@@ -129,28 +129,11 @@ func main() {
 			lineCount++
 		}
 		log.Trace("file line,", lineCount)
-		fetchBar = pb.New(lineCount).Prefix("Read ")
-		outputBar = pb.New(lineCount).Prefix("Bulk ")
+		fetchBar = pb.New(lineCount).Prefix("Read")
+		outputBar = pb.New(lineCount).Prefix("Output ")
 		f.Close()
-		f, err = os.Open(c.DumpInputFile)
-		if err != nil {
-			log.Error(err)
-			return
-		}
-		scanner := bufio.NewScanner(f)
-		scanner.Split(bufio.ScanLines)
-		for scanner.Scan() {
-			js := map[string]interface{}{}
-			line := scanner.Text()
-			log.Trace("reading file,", line)
-			err = json.Unmarshal([]byte(line), &js)
-			c.DocChan <- js
-			fetchBar.Increment()
-		}
-		defer f.Close()
-		wg.Done()
-		close(c.DocChan)
-		log.Debug("end reading file")
+
+		go migrator.NewFileReadWorker(fetchBar,&wg)
 	}
 
 	// start pool
@@ -164,11 +147,11 @@ func main() {
 		if len(c.TargetEsAuthStr) > 0 && strings.Contains(c.TargetEsAuthStr, ":") {
 			authArray := strings.Split(c.TargetEsAuthStr, ":")
 			auth := Auth{User: authArray[0], Pass: authArray[1]}
-			c.TargetAuth = &auth
+			migrator.TargetAuth = &auth
 		}
 
 		//get target es version
-		descESVersion, errs := c.ClusterVersion(c.TargetEs, c.TargetAuth)
+		descESVersion, errs := migrator.ClusterVersion(c.TargetEs, migrator.TargetAuth)
 		if errs != nil {
 			return
 		}
@@ -177,14 +160,14 @@ func main() {
 			log.Debug("target es is V5,", descESVersion.Version.Number)
 			api := new(ESAPIV5)
 			api.Host = c.TargetEs
-			api.Auth = c.TargetAuth
-			c.TargetESAPI = api
+			api.Auth = migrator.TargetAuth
+			migrator.TargetESAPI = api
 		} else {
 			log.Debug("target es is not V5,", descESVersion.Version.Number)
 			api := new(ESAPIV0)
 			api.Host = c.TargetEs
-			api.Auth = c.TargetAuth
-			c.TargetESAPI = api
+			api.Auth = migrator.TargetAuth
+			migrator.TargetESAPI = api
 
 		}
 
@@ -199,7 +182,7 @@ func main() {
 
 		for {
 			if len(c.SourceEs) > 0 {
-				if status, ready := c.ClusterReady(c.SourceESAPI); !ready {
+				if status, ready := migrator.ClusterReady(migrator.SourceESAPI); !ready {
 					log.Infof("%s at %s is %s, delaying migration ", status.Name, c.SourceEs, status.Status)
 					<-timer.C
 					continue
@@ -207,7 +190,7 @@ func main() {
 			}
 
 			if len(c.TargetEs) > 0 {
-				if status, ready := c.ClusterReady(c.TargetESAPI); !ready {
+				if status, ready := migrator.ClusterReady(migrator.TargetESAPI); !ready {
 					log.Infof("%s at %s is %s, delaying migration ", status.Name, c.TargetEs, status.Status)
 					<-timer.C
 					continue
@@ -219,7 +202,7 @@ func main() {
 
 		if len(c.SourceEs) > 0 {
 			// get all indexes from source
-			indexNames, indexCount, sourceIndexMappings, err := c.SourceESAPI.GetIndexMappings(c.CopyAllIndexes, c.SourceIndexNames)
+			indexNames, indexCount, sourceIndexMappings, err := migrator.SourceESAPI.GetIndexMappings(c.CopyAllIndexes, c.SourceIndexNames)
 			if err != nil {
 				log.Error(err)
 				return
@@ -237,7 +220,7 @@ func main() {
 
 					//get source index settings
 					var sourceIndexSettings *Indexes
-					sourceIndexSettings, err := c.SourceESAPI.GetIndexSettings(c.SourceIndexNames)
+					sourceIndexSettings, err := migrator.SourceESAPI.GetIndexSettings(c.SourceIndexNames)
 					log.Debug("source index settings:", sourceIndexSettings)
 					if err != nil {
 						log.Error(err)
@@ -245,7 +228,7 @@ func main() {
 					}
 
 					//get target index settings
-					targetIndexSettings, err := c.TargetESAPI.GetIndexSettings(c.TargetIndexName)
+					targetIndexSettings, err := migrator.TargetESAPI.GetIndexSettings(c.TargetIndexName)
 					if err != nil {
 						//ignore target es settings error
 						log.Debug(err)
@@ -275,7 +258,7 @@ func main() {
 							}
 
 							if c.RecreateIndex {
-								c.TargetESAPI.DeleteIndex(name)
+								migrator.TargetESAPI.DeleteIndex(name)
 								targetIndexExist = false
 							}
 						}
@@ -306,7 +289,7 @@ func main() {
 						//copy indexsettings and mappings
 						if targetIndexExist {
 							log.Debug("update index with settings,", name, tempIndexSettings)
-							err := c.TargetESAPI.UpdateIndexSettings(name, tempIndexSettings)
+							err := migrator.TargetESAPI.UpdateIndexSettings(name, tempIndexSettings)
 							if err != nil {
 								log.Error(err)
 							}
@@ -318,7 +301,7 @@ func main() {
 							}
 
 							log.Debug("create index with settings,", name, tempIndexSettings)
-							err := c.TargetESAPI.CreateIndex(name, tempIndexSettings)
+							err := migrator.TargetESAPI.CreateIndex(name, tempIndexSettings)
 							if err != nil {
 								log.Error(err)
 							}
@@ -338,7 +321,7 @@ func main() {
 						}
 
 						for name, mapping := range *sourceIndexMappings {
-							err := c.TargetESAPI.UpdateIndexMapping(name, mapping.(map[string]interface{})["mappings"].(map[string]interface{}))
+							err := migrator.TargetESAPI.UpdateIndexMapping(name, mapping.(map[string]interface{})["mappings"].(map[string]interface{}))
 							if err != nil {
 								log.Error(err)
 							}
@@ -353,7 +336,7 @@ func main() {
 				return
 			}
 
-			defer c.recoveryIndexSettings(sourceIndexRefreshSettings)
+			defer migrator.recoveryIndexSettings(sourceIndexRefreshSettings)
 		} else if len(c.DumpInputFile) > 0 {
 			//check shard settings
 			//TODO support shard config
@@ -366,15 +349,17 @@ func main() {
 	//start es bulk thread
 	if len(c.TargetEs) > 0 {
 		log.Debug("start es bulk workers")
+		outputBar.Prefix("Bulk")
 		var docCount int
 		wg.Add(c.Workers)
 		for i := 0; i < c.Workers; i++ {
-			go c.NewBulkWorker(&docCount, outputBar, &wg)
+			go migrator.NewBulkWorker(&docCount, outputBar, &wg)
 		}
 	} else if len(c.DumpOutFile) > 0 {
 		// start file write
+		outputBar.Prefix("Write")
 		wg.Add(1)
-		go c.NewFileDumpWorker(outputBar, &wg)
+		go migrator.NewFileDumpWorker(outputBar, &wg)
 	}
 
 	wg.Wait()
@@ -385,20 +370,20 @@ func main() {
 	log.Info("data migration finished.")
 }
 
-func (c *Config) recoveryIndexSettings(sourceIndexRefreshSettings map[string]interface{}) {
+func (c *Migrator) recoveryIndexSettings(sourceIndexRefreshSettings map[string]interface{}) {
 	//update replica and refresh_interval
 	for name, interval := range sourceIndexRefreshSettings {
 		tempIndexSettings := getEmptyIndexSettings()
 		tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["refresh_interval"] = interval
 		//tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_replicas"] = 0
 		c.TargetESAPI.UpdateIndexSettings(name, tempIndexSettings)
-		if c.Refresh {
+		if c.Config.Refresh {
 			c.TargetESAPI.Refresh(name)
 		}
 	}
 }
 
-func (c *Config) ClusterVersion(host string, auth *Auth) (*ClusterVersion, []error) {
+func (c *Migrator) ClusterVersion(host string, auth *Auth) (*ClusterVersion, []error) {
 
 	url := fmt.Sprintf("%s", host)
 	_, body, errs := Get(url, auth)
@@ -419,14 +404,14 @@ func (c *Config) ClusterVersion(host string, auth *Auth) (*ClusterVersion, []err
 	return version, nil
 }
 
-func (c *Config) ClusterReady(api ESAPI) (*ClusterHealth, bool) {
+func (c *Migrator) ClusterReady(api ESAPI) (*ClusterHealth, bool) {
 
 	health := api.ClusterHealth()
 	if health.Status == "red" {
 		return health, false
 	}
 
-	if c.WaitForGreen == false && health.Status == "yellow" {
+	if c.Config.WaitForGreen == false && health.Status == "yellow" {
 		return health, true
 	}
 

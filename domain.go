@@ -63,13 +63,19 @@ type ClusterHealth struct {
 	Status string `json:"status"`
 }
 
-type Config struct {
+type Migrator struct{
+
 	FlushLock       sync.Mutex
 	DocChan         chan map[string]interface{}
 	SourceESAPI     ESAPI
 	TargetESAPI     ESAPI
 	SourceAuth      *Auth
 	TargetAuth      *Auth
+	Config 		*Config
+}
+
+
+type Config struct {
 
 	// config options
 	SourceEs        string `short:"s" long:"source"  description:"source elasticsearch instance, ie: http://localhost:9200/"`
@@ -92,8 +98,8 @@ type Config struct {
 	LogLevel          string `short:"v" long:"log"            description:"setting log level,options:trace,debug,info,warn,error"  default:"INFO"`
 	DumpOutFile       string  `short:"o" long:"output_file"            description:"output documents of source index into local file" `
 	DumpInputFile     string  `short:"i" long:"input_file"            description:"indexing from local dump file" `
-	SourceProxy       string    `long:"source_proxy"            description:"set proxy to source http connections"`
-	TargetProxy       string    `long:"target_proxy"            description:"set proxy to target http connections"`
+	SourceProxy       string    `long:"source_proxy"            description:"set proxy to source http connections, ie: http://127.0.0.1:8080"`
+	TargetProxy       string    `long:"target_proxy"            description:"set proxy to target http connections, ie: http://127.0.0.1:8080"`
 	Refresh           bool      `long:"refresh"                 description:"refresh after migration finished"`
 
 }

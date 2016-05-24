@@ -25,7 +25,7 @@ import (
 
 // Stream from source es instance. "done" is an indicator that the stream is
 // over
-func (s *Scroll) ProcessScrollResult(c *Config, bar *pb.ProgressBar){
+func (s *Scroll) ProcessScrollResult(c *Migrator, bar *pb.ProgressBar){
 
 	//update progress bar
 	bar.Add(len(s.Hits.Docs))
@@ -42,9 +42,9 @@ func (s *Scroll) ProcessScrollResult(c *Config, bar *pb.ProgressBar){
 	}
 }
 
-func (s *Scroll) Next(c *Config, bar *pb.ProgressBar) (done bool) {
+func (s *Scroll) Next(c *Migrator, bar *pb.ProgressBar) (done bool) {
 
-	scroll,err:=c.SourceESAPI.NextScroll(c.ScrollTime,s.ScrollId)
+	scroll,err:=c.SourceESAPI.NextScroll(c.Config.ScrollTime,s.ScrollId)
 	if err != nil {
 		log.Error(err)
 		return false

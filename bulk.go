@@ -22,9 +22,10 @@ import (
 	"encoding/json"
 	"bytes"
 	"gopkg.in/cheggaaa/pb.v1"
+	"time"
 )
 
-func (c *Config) NewBulkWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitGroup) {
+func (c *Migrator) NewBulkWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitGroup) {
 
 	log.Debug("start es bulk worker")
 
@@ -35,78 +36,91 @@ func (c *Config) NewBulkWorker(docCount *int, pb *pb.ProgressBar, wg *sync.WaitG
 
 	READ_DOCS:
 	for {
-		var err error
-		docI, open := <-c.DocChan
-		log.Debug("read doc from channel,",docI)
+		select {
+		case docI, open := <-c.DocChan:
+			var err error
+			log.Trace("read doc from channel,", docI)
 		// this check is in case the document is an error with scroll stuff
-		if status, ok := docI["status"]; ok {
-			if status.(int) == 404 {
-				log.Error("error: ", docI["response"])
-				continue
+			if status, ok := docI["status"]; ok {
+				if status.(int) == 404 {
+					log.Error("error: ", docI["response"])
+					continue
+				}
 			}
-		}
 
 		// sanity check
-		for _, key := range []string{"_index", "_type", "_source", "_id"} {
-			if _, ok := docI[key]; !ok {
-				//json,_:=json.Marshal(docI)
-				//log.Errorf("failed parsing document: %v", string(json))
-				break READ_DOCS
+			for _, key := range []string{"_index", "_type", "_source", "_id"} {
+				if _, ok := docI[key]; !ok {
+					//json,_:=json.Marshal(docI)
+					//log.Errorf("failed parsing document: %v", string(json))
+					break READ_DOCS
+				}
 			}
-		}
 
-		var tempDestIndexName string
-		tempDestIndexName = docI["_index"].(string)
+			var tempDestIndexName string
+			tempDestIndexName = docI["_index"].(string)
 
-		if c.TargetIndexName != "" {
-			tempDestIndexName = c.TargetIndexName
-		}
+			if c.Config.TargetIndexName != "" {
+				tempDestIndexName = c.Config.TargetIndexName
+			}
 
-		doc := Document{
-			Index:  tempDestIndexName,
-			Type:   docI["_type"].(string),
-			source: docI["_source"].(map[string]interface{}),
-			Id:     docI["_id"].(string),
-		}
+			doc := Document{
+				Index:  tempDestIndexName,
+				Type:   docI["_type"].(string),
+				source: docI["_source"].(map[string]interface{}),
+				Id:     docI["_id"].(string),
+			}
 
 		// if channel is closed flush and gtfo
-		if !open {
+			if !open {
+				goto WORKER_DONE
+			}
+
+		// sanity check
+			if len(doc.Index) == 0 || len(doc.Id) == 0 || len(doc.Type) == 0 {
+				log.Errorf("failed decoding document: %+v", doc)
+				continue
+			}
+
+		// encode the doc and and the _source field for a bulk request
+			post := map[string]Document{
+				"create": doc,
+			}
+			if err = docEnc.Encode(post); err != nil {
+				log.Error(err)
+			}
+			if err = docEnc.Encode(doc.source); err != nil {
+				log.Error(err)
+			}
+
+		// if we approach the 100mb es limit, flush to es and reset mainBuf
+			if mainBuf.Len() + docBuf.Len() > (c.Config.BulkSizeInMB * 1000000) {
+				goto CLEAN_BUFFER
+			}
+
+		// append the doc to the main buffer
+			mainBuf.Write(docBuf.Bytes())
+		// reset for next document
+			bulkItemSize++
+			docBuf.Reset()
+			(*docCount)++
+		case <-time.After(time.Second * 5):
+			log.Debug("5s no message input")
+			goto CLEAN_BUFFER
+		case <-time.After(time.Minute * 5):
+			log.Warn("5m no message input, close worker")
 			goto WORKER_DONE
 		}
 
-		// sanity check
-		if len(doc.Index) == 0 || len(doc.Id) == 0 || len(doc.Type) == 0 {
-			log.Errorf("failed decoding document: %+v", doc)
-			continue
-		}
+		goto READ_DOCS
 
-		// encode the doc and and the _source field for a bulk request
-		post := map[string]Document{
-			"create": doc,
-		}
-		if err = docEnc.Encode(post); err != nil {
-			log.Error(err)
-		}
-		if err = docEnc.Encode(doc.source); err != nil {
-			log.Error(err)
-		}
+		CLEAN_BUFFER:
+		c.TargetESAPI.Bulk(&mainBuf)
+		log.Trace("clean buffer, and execute bulk insert")
+		pb.Add(bulkItemSize)
+		bulkItemSize = 0
 
-		// if we approach the 100mb es limit, flush to es and reset mainBuf
-		if mainBuf.Len()+docBuf.Len() > (c.BulkSizeInMB * 1000000) {
-			c.TargetESAPI.Bulk(&mainBuf)
-			log.Trace("bulk insert")
-			pb.Add(bulkItemSize)
-			bulkItemSize = 0
-		}
-
-		// append the doc to the main buffer
-		mainBuf.Write(docBuf.Bytes())
-		// reset for next document
-		bulkItemSize++
-		docBuf.Reset()
-		(*docCount)++
 	}
-
 	WORKER_DONE:
 	if docBuf.Len() > 0 {
 		mainBuf.Write(docBuf.Bytes())
