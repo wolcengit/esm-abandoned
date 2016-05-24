@@ -27,6 +27,30 @@ cross-build-all-platform: clean config
 	GOOS=openbsd  GOARCH=amd64    go build -o bin/openbsd64/esm
 	GOOS=openbsd  GOARCH=386      go build -o bin/openbsd32/esm
 
+
+gox-cross-build-all-platform: clean config
+	go get github.com/mitchellh/gox
+	go test
+	gox -output="bin/esm_{{.OS}}_{{.Arch}}"
+
+cross-gox-build-all-platform: clean config
+	go get github.com/mitchellh/gox
+	go test
+	gox -output="bin/esm_{{.OS}}_{{.Arch}}"
+	gox -os=windows -arch=amd64  -output="bin/windows64/esm"
+	gox -os=windows -arch=386       -output=bin/windows32/esm
+	gox -os=darwin  -arch=amd64     -output=bin/darwin64/esm
+	gox -os=darwin  -arch=386       -output=bin/darwin32/esm
+	gox -os=linux  -arch=amd64      -output=bin/linux64/esm
+	gox -os=linux  -arch=386        -output=bin/linux32/esm
+	gox -os=linux  -arch=arm        -output=bin/linux_arm/esm
+	gox -os=freebsd  -arch=amd64    -output=bin/freebsd64/esm
+	gox -os=freebsd  -arch=386      -output=bin/freebsd32/esm
+	gox -os=netbsd  -arch=amd64     -output=bin/netbsd64/esm
+	gox -os=netbsd  -arch=386       -output=bin/netbsd32/esm
+	gox -os=openbsd  -arch=amd64    -output=bin/openbsd64/esm
+	gox -os=openbsd  -arch=386      -output=bin/openbsd32/esm
+
 cross-build: clean config
 	go test
 	GOOS=windows GOARCH=amd64     go build -o bin/windows64/esm.exe
@@ -43,9 +67,6 @@ format:
 clean:
 	rm -rif bin
 	mkdir bin
-	mkdir bin/windows64
-	mkdir bin/linux64
-	mkdir bin/darwin64
 
 config:
 	@echo "get Dependencies"
@@ -92,3 +113,5 @@ cross-compile:
 	cd $(GOROOT)/src && GOOS=linux  GOARCH=amd64 ./make.bash --no-clean 2> /dev/null 1> /dev/null
 
 	cd $(CWD)
+
+

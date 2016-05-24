@@ -23,7 +23,6 @@ import (
 	"os"
 	"bufio"
 	"encoding/json"
-	"io"
 )
 
 func checkFileIsExist(filename string) (bool) {
@@ -32,27 +31,6 @@ func checkFileIsExist(filename string) (bool) {
 		exist = false;
 	}
 	return exist;
-}
-
-// strip '\n' or read until EOF, return error if read error
-func readLine(reader io.Reader) (line []byte, err error) {
-	line = make([]byte, 0, 100)
-	for {
-		b := make([]byte, 1)
-		n, er := reader.Read(b)
-		if n > 0 {
-			c := b[0]
-			if c == '\n' { // end of line
-				break
-			}
-			line = append(line, c)
-		}
-		if er != nil {
-			err = er
-			return
-		}
-	}
-	return
 }
 
 func (m *Migrator) NewFileReadWorker(pb *pb.ProgressBar, wg *sync.WaitGroup)  {
