@@ -4,6 +4,22 @@ Support cross version and http basic auth.
 
 [![asciicast](https://asciinema.org/a/e562wy1ro30yboznkj5f539md.png)](https://asciinema.org/a/e562wy1ro30yboznkj5f539md)
 
+## Features:
+
+*  Cross version migration supported
+
+*  Overwrite index name
+
+*  Copy index settings and mapping
+
+*  Support http basic auth
+
+*  Support dump into local file
+
+*  Support loading from local file
+
+*  Support http proxy
+
 
 ## Example:
 
