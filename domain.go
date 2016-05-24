@@ -99,7 +99,7 @@ type Config struct {
 	DumpOutFile       string  `short:"o" long:"output_file"            description:"output documents of source index into local file" `
 	DumpInputFile     string  `short:"i" long:"input_file"            description:"indexing from local dump file" `
 	SourceProxy       string    `long:"source_proxy"            description:"set proxy to source http connections, ie: http://127.0.0.1:8080"`
-	TargetProxy       string    `long:"target_proxy"            description:"set proxy to target http connections, ie: http://127.0.0.1:8080"`
+	TargetProxy       string    `long:"dest_proxy"            description:"set proxy to target http connections, ie: http://127.0.0.1:8080"`
 	Refresh           bool      `long:"refresh"                 description:"refresh after migration finished"`
 
 }

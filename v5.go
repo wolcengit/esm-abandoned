@@ -82,7 +82,7 @@ func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount i
 		}
 	}
 
-	resp, body, errs := Post(url, s.Auth,jsonBody)
+	resp, body, errs := Post(url, s.Auth,jsonBody,s.HttpProxy)
 
 	if errs != nil {
 		log.Error(errs)
@@ -115,7 +115,7 @@ func (s *ESAPIV5) NextScroll(scrollTime string,scrollId string)(*Scroll,error)  
 	id := bytes.NewBufferString(scrollId)
 
 	url:=fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", s.Host, scrollTime, id)
-	resp,body, errs := Get(url,s.Auth)
+	resp,body, errs := Get(url,s.Auth,s.HttpProxy)
 	if errs != nil {
 		log.Error(errs)
 		return nil,errs[0]

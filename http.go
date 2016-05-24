@@ -26,21 +26,31 @@ import (
 	"net/url"
 )
 
-func Get(url string,auth *Auth) (*http.Response, string, []error) {
+func Get(url string,auth *Auth,proxy string) (*http.Response, string, []error) {
 	request := gorequest.New()
 	if(auth!=nil){
 		request.SetBasicAuth(auth.User,auth.Pass)
 	}
+
+	if(len(proxy)>0){
+		request.Proxy(proxy)
+	}
+
 	resp, body, errs := request.Get(url).End()
 	return resp, body, errs
 
 }
 
-func Post(url string,auth *Auth, body string)(*http.Response, string, []error)  {
+func Post(url string,auth *Auth, body string,proxy string)(*http.Response, string, []error)  {
 	request := gorequest.New()
 	if(auth!=nil){
 		request.SetBasicAuth(auth.User,auth.Pass)
 	}
+
+	if(len(proxy)>0){
+		request.Proxy(proxy)
+	}
+
 	request.Post(url)
 
 	if(len(body)>0){
@@ -73,18 +83,31 @@ func newDeleteRequest(client *http.Client,method, urlStr string) (*http.Request,
 	return req, nil
 }
 
+func Request(method string,r string,auth *Auth,body *bytes.Buffer,proxy string)(string,error)  {
 
-func Request(method string,url string,auth *Auth,body *bytes.Buffer)(string,error)  {
-	client := &http.Client{}
+	var client *http.Client
+	client = &http.Client{}
+	if(len(proxy)>0){
+		proxyURL, err := url.Parse(proxy)
+		if(err!=nil){
+			log.Error(err)
+		}else{
+			transport := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
+			client = &http.Client{Transport: transport}
+		}
+	}
+
+
 	var reqest *http.Request
 	if(body!=nil){
-		reqest, _ =http.NewRequest(method,url,body)
+		reqest, _ =http.NewRequest(method,r,body)
 	}else{
-		reqest, _ = newDeleteRequest(client,method,url)
+		reqest, _ = newDeleteRequest(client,method,r)
 	}
 	if(auth!=nil){
 		reqest.SetBasicAuth(auth.User,auth.Pass)
 	}
+
 
 	resp,errs := client.Do(reqest)
 	if errs != nil {
@@ -104,7 +127,7 @@ func Request(method string,url string,auth *Auth,body *bytes.Buffer)(string,erro
 		return string(respBody),err
 	}
 
-	log.Trace(url,string(respBody))
+	log.Trace(r,string(respBody))
 
 	if err != nil {
 		return string(respBody),err

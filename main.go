@@ -66,7 +66,7 @@ func main() {
 		}
 
 		//get source es version
-		srcESVersion, errs := migrator.ClusterVersion(c.SourceEs, migrator.SourceAuth)
+		srcESVersion, errs := migrator.ClusterVersion(c.SourceEs, migrator.SourceAuth,migrator.Config.SourceProxy)
 		if errs != nil {
 			return
 		}
@@ -75,12 +75,14 @@ func main() {
 			api := new(ESAPIV5)
 			api.Host = c.SourceEs
 			api.Auth = migrator.SourceAuth
+			api.HttpProxy=migrator.Config.SourceProxy
 			migrator.SourceESAPI = api
 		} else {
 			log.Debug("source es is not V5,", srcESVersion.Version.Number)
 			api := new(ESAPIV0)
 			api.Host = c.SourceEs
 			api.Auth = migrator.SourceAuth
+			api.HttpProxy=migrator.Config.SourceProxy
 			migrator.SourceESAPI = api
 		}
 
@@ -151,7 +153,7 @@ func main() {
 		}
 
 		//get target es version
-		descESVersion, errs := migrator.ClusterVersion(c.TargetEs, migrator.TargetAuth)
+		descESVersion, errs := migrator.ClusterVersion(c.TargetEs, migrator.TargetAuth,migrator.Config.TargetProxy)
 		if errs != nil {
 			return
 		}
@@ -161,12 +163,14 @@ func main() {
 			api := new(ESAPIV5)
 			api.Host = c.TargetEs
 			api.Auth = migrator.TargetAuth
+			api.HttpProxy=migrator.Config.TargetProxy
 			migrator.TargetESAPI = api
 		} else {
 			log.Debug("target es is not V5,", descESVersion.Version.Number)
 			api := new(ESAPIV0)
 			api.Host = c.TargetEs
 			api.Auth = migrator.TargetAuth
+			api.HttpProxy=migrator.Config.TargetProxy
 			migrator.TargetESAPI = api
 
 		}
@@ -383,10 +387,10 @@ func (c *Migrator) recoveryIndexSettings(sourceIndexRefreshSettings map[string]i
 	}
 }
 
-func (c *Migrator) ClusterVersion(host string, auth *Auth) (*ClusterVersion, []error) {
+func (c *Migrator) ClusterVersion(host string, auth *Auth,proxy string) (*ClusterVersion, []error) {
 
 	url := fmt.Sprintf("%s", host)
-	_, body, errs := Get(url, auth)
+	_, body, errs := Get(url, auth,proxy)
 	if errs != nil {
 		log.Error(errs)
 		return nil, errs

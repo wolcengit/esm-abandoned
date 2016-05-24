@@ -46,6 +46,11 @@ loading data from dump files, bulk insert to another es instance
 ./bin/esm -d http://localhost:9200 -y "dest_index"   -n admin:111111 -c 5000 -b 5 --refresh -i=dump.bin
 ```
 
+support proxy
+```
+ ./bin/esm -d http://123345.ap-northeast-1.aws.found.io:9200/ -y "dest_index"   -n admin:111111  -c 5000 -b 1 --refresh  -i dump.bin  --dest_proxy=http://127.0.0.1:9743
+```
+
 ## Download
 https://github.com/medcl/elasticsearch-dump/releases
 
@@ -79,6 +84,8 @@ if download version is not fill you environment,you may try to compile it yourse
   -v  --log 	    setting log level,options:trace,debug,info,warn,error
   -i  --input_file  indexing from local dump file
   -o  --output_file output documents of source index into local file
+  --source_proxy     set proxy to source http connections, ie: http://127.0.0.1:8080
+  --dest_proxy       set proxy to destination http connections, ie: http://127.0.0.1:8080
   --refresh     refresh after migration finished
 
 ```

@@ -37,7 +37,7 @@ type ESAPIV0 struct {
 func (s *ESAPIV0) ClusterHealth() *ClusterHealth {
 
 	url := fmt.Sprintf("%s/_cluster/health", s.Host)
-	_, body, errs := Get(url, s.Auth)
+	_, body, errs := Get(url, s.Auth,s.HttpProxy)
 
 	if errs != nil {
 		return &ClusterHealth{Name: s.Host, Status: "unreachable"}
@@ -93,7 +93,7 @@ func (s *ESAPIV0) GetIndexSettings(indexNames string) (*Indexes, error) {
 	allSettings := &Indexes{}
 
 	url := fmt.Sprintf("%s/%s/_settings", s.Host, indexNames)
-	resp, body, errs := Get(url, s.Auth)
+	resp, body, errs := Get(url, s.Auth,s.HttpProxy)
 	if errs != nil {
 		return nil, errs[0]
 	}
@@ -115,7 +115,7 @@ func (s *ESAPIV0) GetIndexSettings(indexNames string) (*Indexes, error) {
 
 func (s *ESAPIV0) GetIndexMappings(copyAllIndexes bool, indexNames string) (string, int, *Indexes, error) {
 	url := fmt.Sprintf("%s/%s/_mapping", s.Host, indexNames)
-	resp, body, errs := Get(url, s.Auth)
+	resp, body, errs := Get(url, s.Auth,s.HttpProxy)
 	if errs != nil {
 		log.Error(errs)
 		return "", 0, nil, errs[0]
@@ -212,17 +212,17 @@ func (s *ESAPIV0) UpdateIndexSettings(name string, settings map[string]interface
 			log.Debug("update static index settings: ", name)
 			staticIndexSettings := getEmptyIndexSettings()
 			staticIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["analysis"] = set
-			Post(fmt.Sprintf("%s/%s/_close", s.Host, name), s.Auth, "")
+			Post(fmt.Sprintf("%s/%s/_close", s.Host, name), s.Auth, "",s.HttpProxy)
 			body := bytes.Buffer{}
 			enc := json.NewEncoder(&body)
 			enc.Encode(staticIndexSettings)
-			bodyStr, err := Request("PUT", url, s.Auth, &body)
+			bodyStr, err := Request("PUT", url, s.Auth, &body,s.HttpProxy)
 			if err != nil {
 				log.Error(bodyStr, err)
 				return err
 			}
 			delete(settings["settings"].(map[string]interface{})["index"].(map[string]interface{}), "analysis")
-			Post(fmt.Sprintf("%s/%s/_open", s.Host, name), s.Auth, "")
+			Post(fmt.Sprintf("%s/%s/_open", s.Host, name), s.Auth, "",s.HttpProxy)
 		}
 	}
 
@@ -231,7 +231,7 @@ func (s *ESAPIV0) UpdateIndexSettings(name string, settings map[string]interface
 	body := bytes.Buffer{}
 	enc := json.NewEncoder(&body)
 	enc.Encode(settings)
-	_, err := Request("PUT", url, s.Auth, &body)
+	_, err := Request("PUT", url, s.Auth, &body,s.HttpProxy)
 
 	return err
 }
@@ -249,7 +249,7 @@ func (s *ESAPIV0) UpdateIndexMapping(indexName string, settings map[string]inter
 		body := bytes.Buffer{}
 		enc := json.NewEncoder(&body)
 		enc.Encode(mapping)
-		res, err := Request("POST", url, s.Auth, &body)
+		res, err := Request("POST", url, s.Auth, &body,s.HttpProxy)
 		if(err!=nil){
 			log.Error(err,res)
 		}
@@ -263,7 +263,7 @@ func (s *ESAPIV0) DeleteIndex(name string) (err error) {
 
 	url := fmt.Sprintf("%s/%s", s.Host, name)
 
-	Request("DELETE", url, s.Auth, nil)
+	Request("DELETE", url, s.Auth, nil,s.HttpProxy)
 
 	log.Debug("delete index: ", name)
 
@@ -280,7 +280,7 @@ func (s *ESAPIV0) CreateIndex(name string, settings map[string]interface{}) (err
 
 	url := fmt.Sprintf("%s/%s", s.Host, name)
 
-	resp, err := Request("POST", url, s.Auth, &body)
+	resp, err := Request("POST", url, s.Auth, &body,s.HttpProxy)
 	log.Debug(resp)
 
 	return err
@@ -293,7 +293,7 @@ func (s *ESAPIV0) Refresh(name string) (err error) {
 
 	url := fmt.Sprintf("%s/%s/_refresh", s.Host, name)
 
-	Post(url,s.Auth,"")
+	Post(url,s.Auth,"",s.HttpProxy)
 
 	return nil
 }
@@ -319,7 +319,7 @@ func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount
 		}
 	}
 
-	resp, body, errs := Post(url, s.Auth,jsonBody)
+	resp, body, errs := Post(url, s.Auth,jsonBody,s.HttpProxy)
 
 
 
@@ -354,7 +354,7 @@ func (s *ESAPIV0) NextScroll(scrollTime string, scrollId string) (*Scroll, error
 	//  curl -XGET 'http://es-0.9:9200/_search/scroll?scroll=5m'
 	id := bytes.NewBufferString(scrollId)
 	url := fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", s.Host, scrollTime, id)
-	resp, body, errs := Get(url, s.Auth)
+	resp, body, errs := Get(url, s.Auth,s.HttpProxy)
 	if errs != nil {
 		log.Error(errs)
 		return nil, errs[0]
