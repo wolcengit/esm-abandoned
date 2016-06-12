@@ -36,7 +36,6 @@ gox-cross-build-all-platform: clean config
 cross-gox-build-all-platform: clean config
 	go get github.com/mitchellh/gox
 	go test
-	gox -output="bin/esm_{{.OS}}_{{.Arch}}"
 	gox -os=windows -arch=amd64  -output="bin/windows64/esm"
 	gox -os=windows -arch=386       -output=bin/windows32/esm
 	gox -os=darwin  -arch=amd64     -output=bin/darwin64/esm
