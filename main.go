@@ -13,6 +13,7 @@ import (
 	goflags "github.com/jessevdk/go-flags"
 	pb "gopkg.in/cheggaaa/pb.v1"
 	"os"
+	"io"
 )
 
 func main() {
@@ -125,10 +126,15 @@ func main() {
 			return
 		}
 		//get file lines
-		fileScanner := bufio.NewScanner(f)
 		lineCount := 0
-		for fileScanner.Scan() {
-			lineCount++
+		defer f.Close()
+		r := bufio.NewReader(f)
+		for{
+			_,err := r.ReadString('\n')
+			if io.EOF == err || nil != err{
+				break
+			}
+			lineCount += 1
 		}
 		log.Trace("file line,", lineCount)
 		fetchBar = pb.New(lineCount).Prefix("Read")

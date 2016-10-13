@@ -23,6 +23,7 @@ import (
 	"os"
 	"bufio"
 	"encoding/json"
+	"io"
 )
 
 func checkFileIsExist(filename string) (bool) {
@@ -40,13 +41,18 @@ func (m *Migrator) NewFileReadWorker(pb *pb.ProgressBar, wg *sync.WaitGroup)  {
 		log.Error(err)
 		return
 	}
-	scanner := bufio.NewScanner(f)
-	scanner.Split(bufio.ScanLines)
+
+	defer f.Close()
+	r := bufio.NewReader(f)
 	lineCount := 0
-	for scanner.Scan() {
-		lineCount++
+	for{
+		line,err := r.ReadString('\n')
+		if io.EOF == err || nil != err{
+			break
+		}
+		lineCount += 1
 		js := map[string]interface{}{}
-		line := scanner.Text()
+
 		//log.Trace("reading file,",lineCount,",", line)
 		err = json.Unmarshal([]byte(line), &js)
 		if(err!=nil){
