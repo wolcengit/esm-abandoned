@@ -107,6 +107,7 @@ func (s *ESAPIV0) GetIndexSettings(indexNames string) (*Indexes, error) {
 
 	err := json.Unmarshal([]byte(body), allSettings)
 	if err != nil {
+		panic(err)
 		return nil, err
 	}
 
@@ -219,6 +220,7 @@ func (s *ESAPIV0) UpdateIndexSettings(name string, settings map[string]interface
 			bodyStr, err := Request("PUT", url, s.Auth, &body,s.HttpProxy)
 			if err != nil {
 				log.Error(bodyStr, err)
+				panic(err)
 				return err
 			}
 			delete(settings["settings"].(map[string]interface{})["index"].(map[string]interface{}), "analysis")
@@ -251,7 +253,10 @@ func (s *ESAPIV0) UpdateIndexMapping(indexName string, settings map[string]inter
 		enc.Encode(mapping)
 		res, err := Request("POST", url, s.Auth, &body,s.HttpProxy)
 		if(err!=nil){
+			log.Error(url)
+			log.Error(body.String())
 			log.Error(err,res)
+			panic(err)
 		}
 	}
 	return nil
@@ -280,8 +285,8 @@ func (s *ESAPIV0) CreateIndex(name string, settings map[string]interface{}) (err
 
 	url := fmt.Sprintf("%s/%s", s.Host, name)
 
-	resp, err := Request("POST", url, s.Auth, &body,s.HttpProxy)
-	log.Debug(resp)
+	resp, err := Request("PUT", url, s.Auth, &body,s.HttpProxy)
+	log.Debugf("response: %s",resp)
 
 	return err
 }
@@ -298,7 +303,7 @@ func (s *ESAPIV0) Refresh(name string) (err error) {
 	return nil
 }
 
-func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount int,query string) (scroll *Scroll, err error) {
+func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount int,query string, slicedId,maxSlicedCount int) (scroll *Scroll, err error) {
 
 	// curl -XGET 'http://es-0.9:9200/_search?search_type=scan&scroll=10m&size=50'
 	url := fmt.Sprintf("%s/%s/_search?search_type=scan&scroll=%s&size=%d", s.Host, indexNames, scrollTime, docBufferCount)

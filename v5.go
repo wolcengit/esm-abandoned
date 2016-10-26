@@ -63,15 +63,25 @@ func (s *ESAPIV5) Refresh(name string) (err error) {
 	return s.ESAPIV0.Refresh(name)
 }
 
-func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount int,query string)(scroll *Scroll, err error){
+func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount int,query string, slicedId,maxSlicedCount int)(scroll *Scroll, err error){
 	url := fmt.Sprintf("%s/%s/_search?scroll=%s&size=%d", s.Host, indexNames, scrollTime,docBufferCount)
 
 	jsonBody:=""
-	if(len(query)>0) {
+	if(len(query)>0||maxSlicedCount>0) {
 		queryBody := map[string]interface{}{}
-		queryBody["query"] = map[string]interface{}{}
-		queryBody["query"].(map[string]interface{})["query_string"] = map[string]interface{}{}
-		queryBody["query"].(map[string]interface{})["query_string"].(map[string]interface{})["query"] = query
+
+		if(len(query)>0){
+			queryBody["query"] = map[string]interface{}{}
+			queryBody["query"].(map[string]interface{})["query_string"] = map[string]interface{}{}
+			queryBody["query"].(map[string]interface{})["query_string"].(map[string]interface{})["query"] = query
+		}
+
+		if(maxSlicedCount>1){
+			log.Tracef("sliced scroll, %d of %d",slicedId,maxSlicedCount)
+			queryBody["slice"] = map[string]interface{}{}
+			queryBody["slice"].(map[string]interface{})["id"] = slicedId
+			queryBody["slice"].(map[string]interface{})["max"]= maxSlicedCount
+		}
 
 		jsonArray, err := json.Marshal(queryBody)
 		if (err != nil) {

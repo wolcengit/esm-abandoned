@@ -53,7 +53,8 @@ func main() {
 
 	var srcESVersion *ClusterVersion
 	// create a progressbar and start a docCount
-	var fetchBar, outputBar *pb.ProgressBar
+	var outputBar *pb.ProgressBar
+	var fetchBar = pb.New(1).Prefix("Scroll")
 
 	wg := sync.WaitGroup{}
 
@@ -87,36 +88,59 @@ func main() {
 			migrator.SourceESAPI = api
 		}
 
-		scroll, err := migrator.SourceESAPI.NewScroll(c.SourceIndexNames, c.ScrollTime, c.DocBufferCount, c.Query)
-		if err != nil {
-			log.Error(err)
-			return
-		}
-		if scroll != nil && scroll.Hits.Docs != nil {
+		if(c.ScrollSliceSize<1){c.ScrollSliceSize=1}
 
-			if scroll.Hits.Total == 0 {
-				log.Error("can't find documents from source.")
+		fetchBar.ShowBar=false
+
+		totalSize:=0;
+		finishedSlice:=0
+		for slice:=0;slice<c.ScrollSliceSize ;slice++  {
+			scroll, err := migrator.SourceESAPI.NewScroll(c.SourceIndexNames, c.ScrollTime, c.DocBufferCount, c.Query,slice,c.ScrollSliceSize)
+			if err != nil {
+				log.Error(err)
 				return
 			}
+			totalSize+=scroll.Hits.Total
 
-			fetchBar = pb.New(scroll.Hits.Total).Prefix("Scroll ")
-			outputBar = pb.New(scroll.Hits.Total).Prefix("Output ")
+			if scroll != nil && scroll.Hits.Docs != nil {
+
+				if scroll.Hits.Total == 0 {
+					log.Error("can't find documents from source.")
+					return
+				}
+
+
+				go func() {
+					wg.Add(1)
+					//process input
+					// start scroll
+					scroll.ProcessScrollResult(&migrator, fetchBar)
+
+					// loop scrolling until done
+					for scroll.Next(&migrator, fetchBar) == false {
+					}
+					fetchBar.Finish()
+					// finished, close doc chan and wait for goroutines to be done
+					wg.Done()
+					finishedSlice++
+
+					//clean up final results
+					if(finishedSlice==c.ScrollSliceSize){
+						log.Debug("closing doc chan")
+						close(migrator.DocChan)
+					}
+				}()
+			}
 		}
 
-		go func() {
-			wg.Add(1)
-			//process input
-			// start scroll
-			scroll.ProcessScrollResult(&migrator, fetchBar)
+		if(totalSize>0){
+			fetchBar.Total=int64(totalSize)
+			fetchBar.ShowBar=true
+			outputBar = pb.New(totalSize).Prefix("Output ")
+		}
 
-			// loop scrolling until done
-			for scroll.Next(&migrator, fetchBar) == false {
-			}
-			fetchBar.Finish()
-			// finished, close doc chan and wait for goroutines to be done
-			wg.Done()
-			close(migrator.DocChan)
-		}()
+
+
 	} else if len(c.DumpInputFile) > 0 {
 		//read file stream
 		wg.Add(1)
@@ -137,7 +161,7 @@ func main() {
 			lineCount += 1
 		}
 		log.Trace("file line,", lineCount)
-		fetchBar = pb.New(lineCount).Prefix("Read")
+		fetchBar := pb.New(lineCount).Prefix("Read")
 		outputBar = pb.New(lineCount).Prefix("Output ")
 		f.Close()
 
@@ -220,6 +244,8 @@ func main() {
 
 			sourceIndexRefreshSettings := map[string]interface{}{}
 
+			log.Debugf("indexCount: %d",indexCount)
+
 			if indexCount > 0 {
 				//override indexnames to be copy
 				c.SourceIndexNames = indexNames
@@ -246,8 +272,8 @@ func main() {
 					log.Debug("target IndexSettings", targetIndexSettings)
 
 					//if there is only one index and we specify the dest indexname
-					if (c.SourceIndexNames != c.TargetIndexName) && (indexCount == 1 || (len(c.TargetIndexName) > 0)) {
-						log.Debug("only one index,so we can rewrite indexname")
+					if (c.SourceIndexNames != c.TargetIndexName && (len(c.TargetIndexName) > 0) && indexCount == 1 ) {
+						log.Debugf("only one index,so we can rewrite indexname, src:%v, dest:%v ,indexCount:%d",c.SourceIndexNames,c.TargetIndexName,indexCount)
 						(*sourceIndexSettings)[c.TargetIndexName] = (*sourceIndexSettings)[c.SourceIndexNames]
 						delete(*sourceIndexSettings, c.SourceIndexNames)
 						log.Debug(sourceIndexSettings)
@@ -299,6 +325,10 @@ func main() {
 						//copy indexsettings and mappings
 						if targetIndexExist {
 							log.Debug("update index with settings,", name, tempIndexSettings)
+							//override shard settings
+							if c.ShardsCount > 0 {
+								tempIndexSettings["settings"].(map[string]interface{})["index"].(map[string]interface{})["number_of_shards"] = c.ShardsCount
+							}
 							err := migrator.TargetESAPI.UpdateIndexSettings(name, tempIndexSettings)
 							if err != nil {
 								log.Error(err)
@@ -323,8 +353,8 @@ func main() {
 					if c.CopyIndexMappings {
 
 						//if there is only one index and we specify the dest indexname
-						if (c.SourceIndexNames != c.TargetIndexName) && (indexCount == 1 || (len(c.TargetIndexName) > 0)) {
-							log.Debug("only one index,so we can rewrite indexname")
+						if (c.SourceIndexNames != c.TargetIndexName && (len(c.TargetIndexName) > 0) && indexCount == 1 ) {
+							log.Debugf("only one index,so we can rewrite indexname, src:%v, dest:%v ,indexCount:%d",c.SourceIndexNames,c.TargetIndexName,indexCount)
 							(*sourceIndexMappings)[c.TargetIndexName] = (*sourceIndexMappings)[c.SourceIndexNames]
 							delete(*sourceIndexMappings, c.SourceIndexNames)
 							log.Debug(sourceIndexMappings)

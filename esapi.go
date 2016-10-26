@@ -27,7 +27,7 @@ type ESAPI interface{
 	GetIndexMappings(copyAllIndexes bool,indexNames string)(string,int,*Indexes,error)
 	UpdateIndexSettings(indexName string,settings map[string]interface{})(error)
 	UpdateIndexMapping(indexName string,mappings map[string]interface{})(error)
-	NewScroll(indexNames string,scrollTime string,docBufferCount int,query string)(*Scroll, error)
+	NewScroll(indexNames string,scrollTime string,docBufferCount int,query string, slicedId,maxSlicedCount int)(*Scroll, error)
 	NextScroll(scrollTime string,scrollId string)(*Scroll,error)
 	Refresh(name string) (err error)
 }
