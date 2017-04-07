@@ -112,7 +112,7 @@ func (c *Migrator) NewFileDumpWorker(pb *pb.ProgressBar, wg *sync.WaitGroup) {
 		}
 
 		jsr,err:=json.Marshal(docI)
-		log.Debug(string(jsr))
+		log.Trace(string(jsr))
 		if(err!=nil){
 			log.Error(err)
 		}

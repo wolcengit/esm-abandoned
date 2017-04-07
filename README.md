@@ -39,18 +39,18 @@ copy index `src_index` from `192.168.1.x` to `192.168.1.y:9200` and save with `d
 
 support Basic-Auth
 ```
-./bin/esm -s http://localhost:9200/ -x "src_index" -y "dest_index"  -d http://localhost:9201 -n admin:111111
+./bin/esm -s http://localhost:9200 -x "src_index" -y "dest_index"  -d http://localhost:9201 -n admin:111111
 ```
 
 copy settings and override shard size
 ```
-./bin/esm -s http://localhost:9200/ -x "src_index" -y "dest_index"  -d http://localhost:9201 -m admin:111111 -c 10000 --shards=50  --copy_settings 
+./bin/esm -s http://localhost:9200 -x "src_index" -y "dest_index"  -d http://localhost:9201 -m admin:111111 -c 10000 --shards=50  --copy_settings
 
 ```
 
 copy settings and mapping, recreate target index, add query to source fetch, refresh after migration
 ```
-./bin/esm -s http://localhost:9200/ -x "src_index" -q=query:phone -y "dest_index"  -d http://localhost:9201  -c 10000 --shards=5  --copy_settings --copy_mapping --force  --refresh
+./bin/esm -s http://localhost:9200 -x "src_index" -q=query:phone -y "dest_index"  -d http://localhost:9201  -c 10000 --shards=5  --copy_settings --copy_mapping --force  --refresh
 
 ```
 
@@ -66,7 +66,7 @@ loading data from dump files, bulk insert to another es instance
 
 support proxy
 ```
- ./bin/esm -d http://123345.ap-northeast-1.aws.found.io:9200/ -y "dest_index"   -n admin:111111  -c 5000 -b 1 --refresh  -i dump.bin  --dest_proxy=http://127.0.0.1:9743
+ ./bin/esm -d http://123345.ap-northeast-1.aws.found.io:9200 -y "dest_index"   -n admin:111111  -c 5000 -b 1 --refresh  -i dump.bin  --dest_proxy=http://127.0.0.1:9743
 ```
 
 use sliced scroll(only available in elasticsearch v5) to speed scroll, and update shard number
@@ -106,8 +106,8 @@ if download version is not fill you environment,you may try to compile it yourse
   -w, --workers=    concurrency number for bulk workers, default is: "1"
   -b  --bulk_size 	bulk size in MB" default:5
   -v  --log 	    setting log level,options:trace,debug,info,warn,error
-  -i  --input_file  indexing from local dump file
-  -o  --output_file output documents of source index into local file
+  -i  --input_file  indexing from local dump file, file format: {"_id":"xxx","_index":"xxx","_source":{"xxx":"xxx"},"_type":"xxx"  }
+  -o  --output_file output documents of source index into local file, file format same as input_file.
   --source_proxy     set proxy to source http connections, ie: http://127.0.0.1:8080
   --dest_proxy       set proxy to destination http connections, ie: http://127.0.0.1:8080
   --refresh          refresh after migration finished

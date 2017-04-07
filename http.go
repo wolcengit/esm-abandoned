@@ -32,6 +32,8 @@ func Get(url string,auth *Auth,proxy string) (*http.Response, string, []error) {
 		request.SetBasicAuth(auth.User,auth.Pass)
 	}
 
+	request.Header["Content-Type"]= "application/json"
+
 	if(len(proxy)>0){
 		request.Proxy(proxy)
 	}
@@ -46,6 +48,8 @@ func Post(url string,auth *Auth, body string,proxy string)(*http.Response, strin
 	if(auth!=nil){
 		request.SetBasicAuth(auth.User,auth.Pass)
 	}
+
+	request.Header["Content-Type"]= "application/json"
 
 	if(len(proxy)>0){
 		request.Proxy(proxy)
@@ -107,6 +111,8 @@ func Request(method string,r string,auth *Auth,body *bytes.Buffer,proxy string)(
 	if(auth!=nil){
 		reqest.SetBasicAuth(auth.User,auth.Pass)
 	}
+
+	reqest.Header.Set("Content-Type", "application/json")
 
 
 	resp,errs := client.Do(reqest)

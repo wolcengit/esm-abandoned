@@ -43,6 +43,7 @@ func (s *ESAPIV0) ClusterHealth() *ClusterHealth {
 		return &ClusterHealth{Name: s.Host, Status: "unreachable"}
 	}
 
+	log.Debug(url)
 	log.Debug(body)
 
 	health := &ClusterHealth{}
