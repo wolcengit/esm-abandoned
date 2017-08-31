@@ -22,8 +22,6 @@ import (
 	"errors"
 	"fmt"
 	log "github.com/cihub/seelog"
-	"io/ioutil"
-	"net/http"
 	"regexp"
 	"strings"
 )
@@ -63,29 +61,14 @@ func (s *ESAPIV0) Bulk(data *bytes.Buffer) {
 	data.WriteRune('\n')
 	url := fmt.Sprintf("%s/_bulk", s.Host)
 
-	client := &http.Client{}
-	reqest, _ := http.NewRequest("POST", url, data)
-	if s.Auth != nil {
-		reqest.SetBasicAuth(s.Auth.User, s.Auth.Pass)
-	}
-	resp, errs := client.Do(reqest)
-	if errs != nil {
-		log.Error(errs)
-		return
-	}
+	body,err:=Request("POST",url,s.Auth,data,s.HttpProxy)
 
-	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Error(err)
 		return
 	}
 	log.Trace(url,string(body))
-	defer resp.Body.Close()
-	defer data.Reset()
-	if resp.StatusCode != 200 {
-		log.Errorf("bad bulk response: %s %s", body, resp.StatusCode)
-		return
-	}
+	data.Reset()
 }
 
 func (s *ESAPIV0) GetIndexSettings(indexNames string) (*Indexes, error) {
