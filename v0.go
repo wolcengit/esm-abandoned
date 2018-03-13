@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
 	log "github.com/cihub/seelog"
 	"regexp"
 	"strings"
@@ -81,6 +83,7 @@ func (s *ESAPIV0) GetIndexSettings(indexNames string) (*Indexes, error) {
 	if errs != nil {
 		return nil, errs[0]
 	}
+	io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
@@ -105,6 +108,7 @@ func (s *ESAPIV0) GetIndexMappings(copyAllIndexes bool, indexNames string) (stri
 		log.Error(errs)
 		return "", 0, nil, errs[0]
 	}
+	io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
@@ -316,6 +320,7 @@ func (s *ESAPIV0) NewScroll(indexNames string, scrollTime string, docBufferCount
 		log.Error(errs)
 		return nil, errs[0]
 	}
+	io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
 
 	log.Trace("new scroll,",url, body)
@@ -353,6 +358,7 @@ func (s *ESAPIV0) NextScroll(scrollTime string, scrollId string) (*Scroll, error
 		return nil, errors.New(body)
 	}
 
+	io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
 
 	log.Trace("next scroll,",url,body)
