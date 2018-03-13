@@ -88,10 +88,10 @@ type Config struct {
 	BulkSizeInMB      int    `short:"b" long:"bulk_size" description:"bulk size in MB" default:"5"`
 	ScrollTime        string `short:"t" long:"time"    description:"scroll time" default:"1m"`
 	ScrollSliceSize   int    `long:"sliced_scroll_size"    description:"size of sliced scroll, to make it work, the size should be > 1" default:"1"`
-	RecreateIndex     bool      `short:"f" long:"force"   description:"delete destination index before copying" default:"false"`
+	RecreateIndex     bool      `short:"f" long:"force"   description:"delete destination index before copying" `
 	CopyAllIndexes    bool   `short:"a" long:"all"     description:"copy indexes starting with . and _"`
-	CopyIndexSettings bool   `long:"copy_settings"          description:"copy index settings from source" default:"false"`
-	CopyIndexMappings bool   `long:"copy_mappings"          description:"copy index mappings from source" default:"false"`
+	CopyIndexSettings bool   `long:"copy_settings"          description:"copy index settings from source"`
+	CopyIndexMappings bool   `long:"copy_mappings"          description:"copy index mappings from source"`
 	ShardsCount       int    `long:"shards"            description:"set a number of shards on newly created indexes"`
 	SourceIndexNames  string `short:"x" long:"src_indexes" description:"indexes name to copy,support regex and comma separated list" default:"_all"`
 	TargetIndexName   string `short:"y" long:"dest_index" description:"indexes name to save, allow only one indexname, original indexname will be used if not specified" default:""`
