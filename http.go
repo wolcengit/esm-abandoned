@@ -21,6 +21,7 @@ import (
 	"github.com/parnurzeal/gorequest"
 	log "github.com/cihub/seelog"
 	"io/ioutil"
+	"io"
 	"errors"
 	"bytes"
 	"net/url"
@@ -32,7 +33,8 @@ func Get(url string,auth *Auth,proxy string) (*http.Response, string, []error) {
 		request.SetBasicAuth(auth.User,auth.Pass)
 	}
 
-	request.Header["Content-Type"]= "application/json"
+	//request.Header["Content-Type"]= "application/json"
+	request.Header.Add("Content-Type", "application/json");
 
 	if(len(proxy)>0){
 		request.Proxy(proxy)
@@ -49,7 +51,8 @@ func Post(url string,auth *Auth, body string,proxy string)(*http.Response, strin
 		request.SetBasicAuth(auth.User,auth.Pass)
 	}
 
-	request.Header["Content-Type"]= "application/json"
+	//request.Header["Content-Type"]= "application/json"
+	request.Header.Add("Content-Type", "application/json");
 
 	if(len(proxy)>0){
 		request.Proxy(proxy)
@@ -138,6 +141,7 @@ func Request(method string,r string,auth *Auth,body *bytes.Buffer,proxy string)(
 	if err != nil {
 		return string(respBody),err
 	}
+	io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
 	return string(respBody),nil
 }
