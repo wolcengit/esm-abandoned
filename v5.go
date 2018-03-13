@@ -22,6 +22,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"errors"
+    	"io"
+    	"io/ioutil"
 )
 
 type ESAPIV5 struct{
@@ -98,6 +100,7 @@ func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount i
 		log.Error(errs)
 		return nil,errs[0]
 	}
+	io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
@@ -130,6 +133,7 @@ func (s *ESAPIV5) NextScroll(scrollTime string,scrollId string)(*Scroll,error)  
 		log.Error(errs)
 		return nil,errs[0]
 	}
+	io.Copy(ioutil.Discard, resp.Body)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
