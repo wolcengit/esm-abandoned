@@ -95,7 +95,7 @@ func main() {
 		totalSize:=0;
 		finishedSlice:=0
 		for slice:=0;slice<c.ScrollSliceSize ;slice++  {
-			scroll, err := migrator.SourceESAPI.NewScroll(c.SourceIndexNames, c.ScrollTime, c.DocBufferCount, c.Query,slice,c.ScrollSliceSize)
+			scroll, err := migrator.SourceESAPI.NewScroll(c.SourceIndexNames, c.ScrollTime, c.DocBufferCount, c.Query,slice,c.ScrollSliceSize, c.Fields)
 			if err != nil {
 				log.Error(err)
 				return
