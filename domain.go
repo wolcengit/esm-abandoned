@@ -102,6 +102,7 @@ type Config struct {
 	SourceProxy       string    `long:"source_proxy"            description:"set proxy to source http connections, ie: http://127.0.0.1:8080"`
 	TargetProxy       string    `long:"dest_proxy"            description:"set proxy to target http connections, ie: http://127.0.0.1:8080"`
 	Refresh           bool      `long:"refresh"                 description:"refresh after migration finished"`
+	Fields            string `long:"fields"                 description:"output fields, comma separated, ie: col1,col2,col3,..." `
 
 }
 
