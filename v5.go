@@ -17,138 +17,148 @@ limitations under the License.
 package main
 
 import (
-	"bytes"
-	log "github.com/cihub/seelog"
-	"encoding/json"
-	"fmt"
-	"errors"
-    	"io"
-    	"io/ioutil"
+        "bytes"
+        log "github.com/cihub/seelog"
+        "encoding/json"
+        "fmt"
+        "errors"
+        "io"
+        "io/ioutil"
+        "strings"
 )
 
 type ESAPIV5 struct{
-	ESAPIV0
+        ESAPIV0
 }
 
 func (s *ESAPIV5) ClusterHealth() *ClusterHealth {
-	return s.ESAPIV0.ClusterHealth()
+        return s.ESAPIV0.ClusterHealth()
 }
 
 func (s *ESAPIV5) Bulk(data *bytes.Buffer){
-	s.ESAPIV0.Bulk(data)
+        s.ESAPIV0.Bulk(data)
 }
 
 func (s *ESAPIV5) GetIndexSettings(indexNames string) (*Indexes,error){
-	return s.ESAPIV0.GetIndexSettings(indexNames)
+        return s.ESAPIV0.GetIndexSettings(indexNames)
 }
 func (s *ESAPIV5) GetIndexMappings(copyAllIndexes bool,indexNames string)(string,int,*Indexes,error){
-	return s.ESAPIV0.GetIndexMappings(copyAllIndexes,indexNames)
+        return s.ESAPIV0.GetIndexMappings(copyAllIndexes,indexNames)
 }
 
 func (s *ESAPIV5) UpdateIndexSettings(indexName string,settings map[string]interface{})(error){
-	return s.ESAPIV0.UpdateIndexSettings(indexName,settings)
+        return s.ESAPIV0.UpdateIndexSettings(indexName,settings)
 }
 
 func (s *ESAPIV5) DeleteIndex(name string) (err error) {
-	return s.ESAPIV0.DeleteIndex(name)
+        return s.ESAPIV0.DeleteIndex(name)
 }
 
 func (s *ESAPIV5) CreateIndex(name string,settings map[string]interface{}) (err error) {
-	return s.ESAPIV0.CreateIndex(name,settings)
+        return s.ESAPIV0.CreateIndex(name,settings)
 }
 
 func (s *ESAPIV5) UpdateIndexMapping(indexName string,settings map[string]interface{}) error {
-	return s.ESAPIV0.UpdateIndexMapping(indexName,settings)
+        return s.ESAPIV0.UpdateIndexMapping(indexName,settings)
 }
 
 func (s *ESAPIV5) Refresh(name string) (err error) {
-	return s.ESAPIV0.Refresh(name)
+        return s.ESAPIV0.Refresh(name)
 }
 
-func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount int,query string, slicedId,maxSlicedCount int)(scroll *Scroll, err error){
-	url := fmt.Sprintf("%s/%s/_search?scroll=%s&size=%d", s.Host, indexNames, scrollTime,docBufferCount)
+func (s *ESAPIV5) NewScroll(indexNames string,scrollTime string,docBufferCount int,query string, slicedId,maxSlicedCount int, fields string)(scroll *Scroll, err error){
+        url := fmt.Sprintf("%s/%s/_search?scroll=%s&size=%d", s.Host, indexNames, scrollTime,docBufferCount)
 
-	jsonBody:=""
-	if(len(query)>0||maxSlicedCount>0) {
-		queryBody := map[string]interface{}{}
+        jsonBody:=""
+        if(len(query)>0||maxSlicedCount>0||len(fields)>0) {
+                queryBody := map[string]interface{}{}
 
-		if(len(query)>0){
-			queryBody["query"] = map[string]interface{}{}
-			queryBody["query"].(map[string]interface{})["query_string"] = map[string]interface{}{}
-			queryBody["query"].(map[string]interface{})["query_string"].(map[string]interface{})["query"] = query
-		}
 
-		if(maxSlicedCount>1){
-			log.Tracef("sliced scroll, %d of %d",slicedId,maxSlicedCount)
-			queryBody["slice"] = map[string]interface{}{}
-			queryBody["slice"].(map[string]interface{})["id"] = slicedId
-			queryBody["slice"].(map[string]interface{})["max"]= maxSlicedCount
-		}
+                if len(fields) > 0 {
+                        if !strings.Contains(fields, ",") {
+                                log.Error("The fields shoud be seraprated by ,")
+                                return nil, errors.New("")
+                        } else {
+                                queryBody["_source"] = strings.Split(fields, ",")
+                        }
+                }
 
-		jsonArray, err := json.Marshal(queryBody)
-		if (err != nil) {
-			log.Error(err)
+                if(len(query)>0){
+                        queryBody["query"] = map[string]interface{}{}
+                        queryBody["query"].(map[string]interface{})["query_string"] = map[string]interface{}{}
+                        queryBody["query"].(map[string]interface{})["query_string"].(map[string]interface{})["query"] = query
+                }
 
-		}else{
-			jsonBody=string(jsonArray)
-		}
-	}
+                if(maxSlicedCount>1){
+                        log.Tracef("sliced scroll, %d of %d",slicedId,maxSlicedCount)
+                        queryBody["slice"] = map[string]interface{}{}
+                        queryBody["slice"].(map[string]interface{})["id"] = slicedId
+                        queryBody["slice"].(map[string]interface{})["max"]= maxSlicedCount
+                }
 
-	resp, body, errs := Post(url, s.Auth,jsonBody,s.HttpProxy)
+                jsonArray, err := json.Marshal(queryBody)
+                if (err != nil) {
+                        log.Error(err)
 
-	if errs != nil {
-		log.Error(errs)
-		return nil,errs[0]
-	}
-	io.Copy(ioutil.Discard, resp.Body)
-	defer resp.Body.Close()
+                }else{
+                        jsonBody=string(jsonArray)
+                }
+        }
 
-	if resp.StatusCode != 200 {
-		return nil,errors.New(body)
-	}
+        resp, body, errs := Post(url, s.Auth,jsonBody,s.HttpProxy)
 
-	log.Trace("new scroll,",body)
+        if errs != nil {
+                log.Error(errs)
+                return nil,errs[0]
+        }
+        io.Copy(ioutil.Discard, resp.Body)
+        defer resp.Body.Close()
 
-	if err != nil {
-		log.Error(err)
-		return nil,err
-	}
+        if resp.StatusCode != 200 {
+                return nil,errors.New(body)
+        }
 
-	scroll = &Scroll{}
-	err = json.Unmarshal([]byte(body),scroll)
-	if err != nil {
-		log.Error(err)
-		return nil,err
-	}
+        log.Trace("new scroll,",body)
 
-	return scroll,err
+        if err != nil {
+                log.Error(err)
+                return nil,err
+        }
+
+        scroll = &Scroll{}
+        err = json.Unmarshal([]byte(body),scroll)
+        if err != nil {
+                log.Error(err)
+                return nil,err
+        }
+
+        return scroll,err
 }
 
 func (s *ESAPIV5) NextScroll(scrollTime string,scrollId string)(*Scroll,error)  {
-	id := bytes.NewBufferString(scrollId)
+        id := bytes.NewBufferString(scrollId)
 
-	url:=fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", s.Host, scrollTime, id)
-	resp,body, errs := Get(url,s.Auth,s.HttpProxy)
-	if errs != nil {
-		log.Error(errs)
-		return nil,errs[0]
-	}
-	io.Copy(ioutil.Discard, resp.Body)
-	defer resp.Body.Close()
+        url:=fmt.Sprintf("%s/_search/scroll?scroll=%s&scroll_id=%s", s.Host, scrollTime, id)
+        resp,body, errs := Get(url,s.Auth,s.HttpProxy)
+        if errs != nil {
+                log.Error(errs)
+                return nil,errs[0]
+        }
+        io.Copy(ioutil.Discard, resp.Body)
+        defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return nil,errors.New(body)
-	}
+        if resp.StatusCode != 200 {
+                return nil,errors.New(body)
+        }
 
-	// decode elasticsearch scroll response
-	scroll := &Scroll{}
-	err:= json.Unmarshal([]byte(body), &scroll)
-	if err != nil {
-		log.Error(body)
-		log.Error(err)
-		return nil,err
-	}
+        // decode elasticsearch scroll response
+        scroll := &Scroll{}
+        err:= json.Unmarshal([]byte(body), &scroll)
+        if err != nil {
+                log.Error(body)
+                log.Error(err)
+                return nil,err
+        }
 
-	return scroll,nil
+        return scroll,nil
 }
-
