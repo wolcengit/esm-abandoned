@@ -2,7 +2,7 @@ language: go
 os:
   - osx
 go:
-- 1.6
+  - 1.10
 
 install:
   - go get github.com/mitchellh/gox

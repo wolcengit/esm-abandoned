@@ -3,6 +3,7 @@ CWD=$(shell pwd)
 OLDGOPATH=${GOPATH}
 NEWGOPATH:=${CWD}:${OLDGOPATH}
 export GOPATH=$(NEWGOPATH)
+PATH := $(PATH):$(GOPATH)/bin
 
 
 build: clean config
