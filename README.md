@@ -50,7 +50,7 @@ copy settings and override shard size
 
 copy settings and mapping, recreate target index, add query to source fetch, refresh after migration
 ```
-./bin/esm -s http://localhost:9200 -x "src_index" -q=query:phone -y "dest_index"  -d http://localhost:9201  -c 10000 --shards=5  --copy_settings --copy_mapping --force  --refresh
+./bin/esm -s http://localhost:9200 -x "src_index" -q=query:phone -y "dest_index"  -d http://localhost:9201  -c 10000 --shards=5  --copy_settings --copy_mappings --force  --refresh
 
 ```
 
