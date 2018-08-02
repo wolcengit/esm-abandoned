@@ -72,7 +72,14 @@ func main() {
 		if errs != nil {
 			return
 		}
-		if strings.HasPrefix(srcESVersion.Version.Number, "5.") {
+		if strings.HasPrefix(srcESVersion.Version.Number, "6.") {
+			log.Debug("source es is V6,", srcESVersion.Version.Number)
+			api := new(ESAPIV5)
+			api.Host = c.SourceEs
+			api.Auth = migrator.SourceAuth
+			api.HttpProxy=migrator.Config.SourceProxy
+			migrator.SourceESAPI = api
+		} else if strings.HasPrefix(srcESVersion.Version.Number, "5.") {
 			log.Debug("source es is V5,", srcESVersion.Version.Number)
 			api := new(ESAPIV5)
 			api.Host = c.SourceEs
@@ -188,7 +195,14 @@ func main() {
 			return
 		}
 
-		if strings.HasPrefix(descESVersion.Version.Number, "5.") {
+		if strings.HasPrefix(descESVersion.Version.Number, "6.") {
+			log.Debug("target es is V6,", descESVersion.Version.Number)
+			api := new(ESAPIV5)
+			api.Host = c.TargetEs
+			api.Auth = migrator.TargetAuth
+			api.HttpProxy=migrator.Config.TargetProxy
+			migrator.TargetESAPI = api
+		}else if strings.HasPrefix(descESVersion.Version.Number, "5.") {
 			log.Debug("target es is V5,", descESVersion.Version.Number)
 			api := new(ESAPIV5)
 			api.Host = c.TargetEs
