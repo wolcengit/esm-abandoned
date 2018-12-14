@@ -91,13 +91,22 @@ func newDeleteRequest(client *http.Client,method, urlStr string) (*http.Request,
 func Request(method string,r string,auth *Auth,body *bytes.Buffer,proxy string)(string,error)  {
 
 	var client *http.Client
-	client = &http.Client{}
+	//client = &http.Client{}
+	transport := http.Transport{
+		DisableKeepAlives: true,
+	}
+	client = &http.Client{
+		Transport: &transport,
+	}
 	if(len(proxy)>0){
 		proxyURL, err := url.Parse(proxy)
 		if(err!=nil){
 			log.Error(err)
 		}else{
-			transport := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
+			transport := &http.Transport{
+				DisableKeepAlives: true,
+				Proxy: http.ProxyURL(proxyURL),
+			}
 			client = &http.Client{Transport: transport}
 		}
 	}
